@@ -359,6 +359,22 @@ function init() {
     });
   }
 
+  // Ask the browser not to evict this app's storage (cached library,
+  // wishlist, and any not-yet-synced pending queue) under low-storage
+  // pressure. Chrome/Android honors this fairly reliably; iOS WebKit
+  // (which is what every iOS browser runs on, Chrome included) has
+  // historically been inconsistent about it - this can't hurt, but
+  // isn't a guarantee there either.
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().then((granted) => {
+      console.log(granted
+        ? "Storage persistence granted - less likely to be evicted under storage pressure."
+        : "Storage persistence not granted - browser may still evict data if the device runs low on space.");
+    }).catch((err) => {
+      console.error("Storage persistence request failed:", err);
+    });
+  }
+
   if (navigator.onLine) syncNow();
 }
 
