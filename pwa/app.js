@@ -7,11 +7,11 @@
 const CONFIG = {
   // Your Apps Script Web App URL, e.g.
   // "https://script.google.com/macros/s/AKfycb.../exec"
-  API_URL: "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE",
+  API_URL: "https://script.google.com/macros/s/AKfycby66-WJTUbG_Q2rWJLiMgUanH1uQKo7oB3G78HZw1PHbNkoc_-ankCkr7FldRkfWX7n/exec",
 
   // Must exactly match the secret you set via the "Set API Secret" menu
   // item in the Google Sheet.
-  API_SECRET: "PASTE_YOUR_SHARED_SECRET_HERE"
+  API_SECRET: "k9F7#mP2$xL5!vR8*qN4&zT1"
 };
 
 const STORAGE_KEYS = {
