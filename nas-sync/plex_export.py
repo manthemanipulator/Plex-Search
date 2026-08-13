@@ -6,7 +6,13 @@ from plexapi.server import PlexServer
 
 # --- Configuration ---
 baseurl = 'http://127.0.0.1:32400'
-token = 'REDACTED_PLEX_TOKEN'
+
+# Never hardcode the Plex token here - this file is tracked in a public
+# git repo. Set PLEX_TOKEN as an environment variable in the Task
+# Scheduler wrapper script instead (add a line like
+#   export PLEX_TOKEN="your-real-token-here"
+# right before the "python3 /volume1/Data/Python/plex-export.py" line).
+token = os.environ.get('PLEX_TOKEN')
 csv_file_path = '/volume1/Data/Python/plex_library_export.csv'
 
 # Names of your Plex library sections, in case yours differ from the defaults
@@ -29,6 +35,12 @@ def count_existing_rows(path):
 
 
 def main():
+    if not token:
+        print("ERROR: PLEX_TOKEN environment variable is not set. Add "
+              "'export PLEX_TOKEN=\"your-real-token\"' to the Task Scheduler "
+              "wrapper script before the line that runs this script.")
+        sys.exit(1)
+
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     print("Connecting to Plex...")
