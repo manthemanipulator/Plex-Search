@@ -1,7 +1,7 @@
 // Bump this string whenever you change any file in this folder and push a
 // new version - it forces installed phones to fetch fresh copies instead
 // of quietly serving the old cached app shell forever.
-const CACHE_NAME = 'plex-search-v11';
+const CACHE_NAME = 'plex-search-v12';
 
 const PRECACHE_URLS = [
   './',
