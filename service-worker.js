@@ -1,7 +1,7 @@
 // Bump this string whenever you change any file in this folder and push a
 // new version - it forces installed phones to fetch fresh copies instead
 // of quietly serving the old cached app shell forever.
-const CACHE_NAME = 'plex-search-v12';
+const CACHE_NAME = 'plex-search-v13';
 
 const PRECACHE_URLS = [
   './',
@@ -28,6 +28,16 @@ self.addEventListener('activate', (event) => {
       ))
       .then(() => self.clients.claim())
   );
+});
+
+// Lets the page ask "what version are you, right now" - answered by
+// whichever service worker actually has control of the page, which is a
+// more trustworthy signal than a version number baked into app.js (since
+// app.js itself might be the stale cached copy asking the question).
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'GET_VERSION') {
+    event.source.postMessage({ type: 'VERSION', version: CACHE_NAME });
+  }
 });
 
 self.addEventListener('fetch', (event) => {

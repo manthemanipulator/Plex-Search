@@ -335,6 +335,47 @@ function toggleDetailsPanel() {
   if (!panel || !btn) return;
   const nowHidden = panel.classList.toggle("hidden");
   btn.setAttribute("aria-expanded", String(!nowHidden));
+  if (!nowHidden) refreshAppBuildLine(); // just opened - get a fresh read each time
+}
+
+// Asks whichever service worker is ACTUALLY controlling this page right
+// now for its own CACHE_NAME, rather than trusting a version number
+// hardcoded in this file - app.js itself could be the stale cached copy,
+// so it can't be a trustworthy witness about its own freshness. This is
+// how you tell "did my phone actually pick up the latest push" apart from
+// "the site changed but this device is still on an old cached version."
+function getActiveServiceWorkerVersion() {
+  return new Promise((resolve) => {
+    if (!("serviceWorker" in navigator)) {
+      resolve("service workers not supported in this browser");
+      return;
+    }
+    if (!navigator.serviceWorker.controller) {
+      resolve("no service worker controlling this page yet - try reloading");
+      return;
+    }
+    const timeoutId = setTimeout(() => {
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+      resolve("no response - try reloading");
+    }, 1500);
+    function onMessage(event) {
+      if (event.data && event.data.type === "VERSION") {
+        clearTimeout(timeoutId);
+        navigator.serviceWorker.removeEventListener("message", onMessage);
+        resolve(event.data.version);
+      }
+    }
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" });
+  });
+}
+
+function refreshAppBuildLine() {
+  const el = document.getElementById("appBuild");
+  if (!el) return;
+  getActiveServiceWorkerVersion().then((version) => {
+    el.textContent = "App build: " + version;
+  });
 }
 
 function renderCounts() {
@@ -517,7 +558,13 @@ function init() {
     navigator.serviceWorker.register("./service-worker.js").catch((err) => {
       console.error("Service worker registration failed:", err);
     });
+    // Fires when a newly-activated service worker takes over the page
+    // (e.g. right after an update finishes installing) - refresh the
+    // build line so it doesn't keep showing the version that was active
+    // when the page first loaded.
+    navigator.serviceWorker.addEventListener("controllerchange", refreshAppBuildLine);
   }
+  refreshAppBuildLine();
 
   // Ask the browser not to evict this app's storage (cached library,
   // wishlist, and any not-yet-synced pending queue) under low-storage

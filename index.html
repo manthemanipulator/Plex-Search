@@ -165,6 +165,11 @@
   #detailsPanel.hidden { display: none; }
   #detailsPanel #status { color: var(--muted); font-weight: 600; }
   #libraryUpdated.stale { color: var(--stale-fg); font-weight: 600; }
+  #appBuild {
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
 
   input#q {
     width: 100%;
@@ -257,6 +262,7 @@
       <div id="status">Loading...</div>
       <div id="lastSync">App never synced yet</div>
       <div id="libraryUpdated">Library data from: unknown</div>
+      <div id="appBuild">Checking app version...</div>
     </div>
   </div>
 
