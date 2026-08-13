@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plex Search</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#111111">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 16px;
+    padding-bottom: 40px;
+    background: #111;
+    color: #eee;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+
+  #statusBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 14px;
+    gap: 8px;
+  }
+  #statusLeft { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot.online { background: #3a3; }
+  .dot.offline { background: #a33; }
+  #syncBtn {
+    background: #222;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  #syncBtn:active { background: #333; }
+
+  input#q {
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+    border-radius: 8px;
+    border: 1px solid #444;
+    background: #222;
+    color: #eee;
+  }
+  #count { margin-top: 8px; color: #888; font-size: 13px; }
+
+  .result {
+    padding: 10px 12px;
+    margin-top: 8px;
+    border-radius: 8px;
+    background: #1e1e1e;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .result span:first-child { flex: 1; min-width: 0; }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    vertical-align: middle;
+  }
+  .tv { background: #2a4d69; color: #bcd; }
+  .movie { background: #4d2a2a; color: #dbc; }
+  .wish { background: #4d472a; color: #ddc; }
+
+  .removeBtn {
+    background: none;
+    border: 1px solid #555;
+    color: #aaa;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+
+  #empty { color: #888; margin-top: 16px; }
+  .addBtn {
+    display: block;
+    margin-top: 12px;
+    width: 100%;
+    padding: 12px;
+    font-size: 15px;
+    border-radius: 8px;
+    border: none;
+    background: #2a6b4d;
+    color: #fff;
+  }
+  .addBtn:active { background: #1f5038; }
+</style>
+</head>
+<body>
+  <h1>Plex Search</h1>
+
+  <div id="statusBar">
+    <div id="statusLeft">
+      <span id="onlineDot" class="dot offline"></span>
+      <span id="status">Loading...</span>
+    </div>
+    <button id="syncBtn" type="button">Sync Now</button>
+  </div>
+  <div id="lastSync" style="font-size:11px;color:#666;margin-top:-8px;margin-bottom:12px;">Never synced yet</div>
+
+  <input id="q" type="text" placeholder="Search movies &amp; TV shows..." autofocus autocomplete="off">
+  <div id="count"></div>
+  <div id="results"></div>
+  <div id="empty" style="display:none;"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
