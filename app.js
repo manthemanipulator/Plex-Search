@@ -46,6 +46,11 @@ let state = {
 let isSyncing = false;
 let mode = "search"; // "search" (type to find something) or "wishlist" (browse everything on it)
 
+// Tracks whether the most recent real sync attempt (not just an early
+// return for being offline/unconfigured) actually succeeded. Drives the
+// app-sync status dot. null = no attempt made yet this session.
+let lastSyncOk = null;
+
 // ---------------------------------------------------------------------
 // Local storage helpers
 // ---------------------------------------------------------------------
@@ -226,6 +231,7 @@ async function syncNow() {
       });
       if (!result.ok) {
         console.error("Sync item rejected by server:", item, result.error);
+        lastSyncOk = false;
         if (result.error === "Unauthorized") {
           // Wrong/stale secret - forget it so the next attempt re-prompts
           // instead of failing silently forever.
@@ -244,6 +250,7 @@ async function syncNow() {
     // Pull the freshest inventory/wishlist now that our writes landed.
     const fresh = await fetchLatestData(secret);
     if (!fresh.ok && fresh.error) {
+      lastSyncOk = false;
       if (fresh.error === "Unauthorized") {
         forgetStoredSecret();
         setStatus("Wrong API secret - tap Sync Now to re-enter it");
@@ -260,11 +267,13 @@ async function syncNow() {
     // it only advances when the NAS pipeline actually writes new data.
     if (fresh.syncTime) state.librarySyncTime = fresh.syncTime;
     state.lastSync = new Date().toLocaleString();
+    lastSyncOk = true;
     saveLocalData();
     render();
     setStatus("Synced");
   } catch (err) {
     console.error("Sync failed:", err);
+    lastSyncOk = false;
     setStatus("Sync failed - will retry (" + state.pendingQueue.length + " queued)");
   } finally {
     isSyncing = false;
@@ -292,10 +301,40 @@ function setStatus(text) {
     libraryEl.className = isLibraryDataStale() ? "stale" : "";
   }
 
-  const onlineEl = document.getElementById("onlineDot");
-  if (onlineEl) {
-    onlineEl.className = navigator.onLine ? "dot online" : "dot offline";
+  updateStatusDots();
+}
+
+// Two dots replace the old wall of status text: one for whether the app
+// itself is syncing OK (accounts for being offline too), one for whether
+// the library data pulled from the NAS is still fresh. Full detail lives
+// in the dropdown panel behind the hamburger button.
+function updateStatusDots() {
+  const appDot = document.getElementById("appSyncDot");
+  if (appDot) {
+    let cls = "neutral";
+    if (!navigator.onLine) {
+      cls = "neutral"; // can't sync right now, but that's expected, not an error
+    } else if (!state.lastSync || lastSyncOk === false) {
+      cls = "bad";
+    } else if (lastSyncOk === true) {
+      cls = "ok";
+    }
+    appDot.className = "statusDot " + cls;
   }
+
+  const libraryDot = document.getElementById("librarySyncDot");
+  if (libraryDot) {
+    const cls = (!state.librarySyncTime || isLibraryDataStale()) ? "bad" : "ok";
+    libraryDot.className = "statusDot " + cls;
+  }
+}
+
+function toggleDetailsPanel() {
+  const panel = document.getElementById("detailsPanel");
+  const btn = document.getElementById("menuBtn");
+  if (!panel || !btn) return;
+  const nowHidden = panel.classList.toggle("hidden");
+  btn.setAttribute("aria-expanded", String(!nowHidden));
 }
 
 function renderCounts() {
@@ -452,6 +491,19 @@ function init() {
   document.getElementById("q").addEventListener("input", render);
   document.getElementById("syncBtn").addEventListener("click", syncNow);
   document.getElementById("modeToggle").addEventListener("click", toggleMode);
+
+  const menuBtn = document.getElementById("menuBtn");
+  menuBtn.addEventListener("click", (e) => {
+    e.stopPropagation(); // don't let this same click immediately re-trigger the outside-click-closes handler below
+    toggleDetailsPanel();
+  });
+  document.addEventListener("click", (e) => {
+    const panel = document.getElementById("detailsPanel");
+    if (!panel || panel.classList.contains("hidden")) return;
+    if (panel.contains(e.target)) return; // clicks inside the panel shouldn't close it
+    panel.classList.add("hidden");
+    menuBtn.setAttribute("aria-expanded", "false");
+  });
 
   window.addEventListener("online", () => {
     setStatus("Back online - syncing...");

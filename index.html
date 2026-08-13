@@ -34,9 +34,11 @@
     --add-bg: #2a6b4d;
     --add-bg-active: #1f5038;
     --add-fg: #ffffff;
-    --dot-online: #33aa33;
-    --dot-offline: #aa3333;
+    --dot-ok: #33aa33;
+    --dot-bad: #aa3333;
+    --dot-neutral: #666666;
     --stale-fg: #e0a030;
+    --panel-shadow: rgba(0, 0, 0, 0.4);
   }
 
   @media (prefers-color-scheme: light) {
@@ -62,9 +64,11 @@
       --add-bg: #2f855a;
       --add-bg-active: #276749;
       --add-fg: #ffffff;
-      --dot-online: #2f855a;
-      --dot-offline: #c53030;
+      --dot-ok: #2f855a;
+      --dot-bad: #c53030;
+      --dot-neutral: #999999;
       --stale-fg: #b45309;
+      --panel-shadow: rgba(0, 0, 0, 0.15);
     }
   }
 
@@ -85,45 +89,73 @@
     background: var(--bg);
     color: var(--fg);
   }
-  h1 { font-size: 22px; font-weight: 700; margin: 0 0 10px 0; line-height: 1.2; }
+  h1 { font-size: 22px; font-weight: 700; margin: 0; line-height: 1.2; }
 
-  /* Everything between the title and the search box shares one vertical
-     rhythm now (6px between each line, one consistent 16px gap before the
-     search box) instead of a pile of one-off margins and mismatched sizes. */
-  #meta {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 16px;
-  }
+  /* #headerWrap anchors the dropdown details panel so it can be
+     absolutely positioned under the hamburger button without pushing
+     the search box down when it's closed. */
+  #headerWrap { position: relative; margin-bottom: 16px; }
 
-  #statusBar {
+  #topBar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 13px;
-    color: var(--muted);
-    gap: 8px;
+    gap: 10px;
   }
-  #statusLeft { display: flex; align-items: center; gap: 6px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-  .dot.online { background: var(--dot-online); }
-  .dot.offline { background: var(--dot-offline); }
-  #syncBtn {
+
+  #topControls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* Two small status dots replace the old always-visible status text -
+     one for whether the app itself is syncing OK, one for whether the
+     library data pulled from the NAS is fresh. Tap the hamburger for
+     the actual timestamps behind them. */
+  .statusDot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+  .statusDot.ok { background: var(--dot-ok); }
+  .statusDot.bad { background: var(--dot-bad); }
+  .statusDot.neutral { background: var(--dot-neutral); }
+
+  #syncBtn, #menuBtn {
     background: var(--btn-bg);
     color: var(--btn-fg);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 13px;
+    line-height: 1.4;
   }
-  #syncBtn:active { background: var(--btn-active); }
+  #syncBtn:active, #menuBtn:active { background: var(--btn-active); }
+  #menuBtn { font-size: 15px; padding: 3px 9px; }
 
-  #lastSync, #libraryUpdated {
+  #detailsPanel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 230px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    box-shadow: 0 6px 18px var(--panel-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     font-size: 12px;
     line-height: 1.3;
     color: var(--faint);
+    z-index: 20;
   }
+  #detailsPanel.hidden { display: none; }
+  #detailsPanel #status { color: var(--muted); font-weight: 600; }
   #libraryUpdated.stale { color: var(--stale-fg); font-weight: 600; }
 
   input#q {
@@ -203,18 +235,21 @@
 </style>
 </head>
 <body>
-  <h1>Plex Search</h1>
-
-  <div id="meta">
-    <div id="statusBar">
-      <div id="statusLeft">
-        <span id="onlineDot" class="dot offline"></span>
-        <span id="status">Loading...</span>
+  <div id="headerWrap">
+    <div id="topBar">
+      <h1>Plex Search</h1>
+      <div id="topControls">
+        <span class="statusDot neutral" id="appSyncDot" title="App sync status"></span>
+        <span class="statusDot neutral" id="librarySyncDot" title="Library data status"></span>
+        <button id="syncBtn" type="button">Sync Now</button>
+        <button id="menuBtn" type="button" aria-label="Sync details" aria-expanded="false">&#9776;</button>
       </div>
-      <button id="syncBtn" type="button">Sync Now</button>
     </div>
-    <div id="lastSync">App never synced yet</div>
-    <div id="libraryUpdated">Library data from: unknown</div>
+    <div id="detailsPanel" class="hidden">
+      <div id="status">Loading...</div>
+      <div id="lastSync">App never synced yet</div>
+      <div id="libraryUpdated">Library data from: unknown</div>
+    </div>
   </div>
 
   <input id="q" type="text" placeholder="Search movies &amp; TV shows..." autofocus autocomplete="off">
