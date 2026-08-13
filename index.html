@@ -75,7 +75,8 @@
     /* Push content below the notch/status bar (needed because the iOS
        status bar is "black-translucent", i.e. it overlays the page
        instead of pushing it down) and above the home indicator. */
-    padding-top: max(16px, env(safe-area-inset-top));
+    padding-top: 16px; /* fallback for browsers without safe-area support */
+    padding-top: calc(env(safe-area-inset-top, 0px) + 20px); /* extra buffer beyond the raw inset - iOS's status-bar blur/vibrancy softly fades past the exact boundary, so sitting flush against it still looks fuzzy */
     padding-bottom: max(40px, env(safe-area-inset-bottom) + 24px);
     padding-left: max(16px, env(safe-area-inset-left));
     padding-right: max(16px, env(safe-area-inset-right));
