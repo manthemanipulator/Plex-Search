@@ -29,6 +29,7 @@ let state = {
 };
 
 let isSyncing = false;
+let mode = "search"; // "search" (type to find something) or "wishlist" (browse everything on it)
 
 // ---------------------------------------------------------------------
 // Local storage helpers
@@ -191,8 +192,44 @@ function setStatus(text) {
 
 function renderCounts() {
   const countEl = document.getElementById("count");
-  if (!countEl) return;
-  countEl.textContent = state.inventory.length + " titles in library, " + state.wishlist.length + " on wishlist";
+  if (countEl) {
+    countEl.textContent = state.inventory.length + " titles in library, " + state.wishlist.length + " on wishlist";
+  }
+  const toggleBtn = document.getElementById("modeToggle");
+  if (toggleBtn) {
+    toggleBtn.textContent = mode === "wishlist" ? "Back to Search" : "View Wishlist (" + state.wishlist.length + ")";
+  }
+}
+
+function toggleMode() {
+  mode = mode === "search" ? "wishlist" : "search";
+  const input = document.getElementById("q");
+  input.placeholder = mode === "wishlist" ? "Filter wishlist (optional)..." : "Search movies & TV shows...";
+  render();
+}
+
+function makeResultRow(text, tagClass, tagText, wishlistTitle) {
+  const div = document.createElement("div");
+  div.className = "result";
+
+  const textEl = document.createElement("span");
+  textEl.textContent = text;
+  div.appendChild(textEl);
+
+  const tag = document.createElement("span");
+  tag.className = "tag " + tagClass;
+  tag.textContent = tagText;
+  div.appendChild(tag);
+
+  if (wishlistTitle) {
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "removeBtn";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", () => removeFromWishlistLocal(wishlistTitle));
+    div.appendChild(removeBtn);
+  }
+
+  return div;
 }
 
 function render() {
@@ -201,7 +238,46 @@ function render() {
   const resultsEl = document.getElementById("results");
   const emptyEl = document.getElementById("empty");
   resultsEl.innerHTML = "";
+  emptyEl.innerHTML = "";
 
+  if (mode === "wishlist") {
+    renderWishlistMode(query, resultsEl, emptyEl);
+  } else {
+    renderSearchMode(query, resultsEl, emptyEl);
+  }
+}
+
+// Browse (and optionally filter) everything currently on the wishlist,
+// with a Remove button on each row - this is the "what did I already add?"
+// view, independent of the search box.
+function renderWishlistMode(query, resultsEl, emptyEl) {
+  const items = state.wishlist
+    .filter((title) => !query || isMatch(title, query))
+    .slice()
+    .sort((a, b) => a.localeCompare(b));
+
+  if (items.length === 0) {
+    emptyEl.style.display = "block";
+    const msg = document.createElement("div");
+    msg.textContent = query
+      ? 'No wishlist items match "' + query + '".'
+      : "Your wishlist is empty.";
+    emptyEl.appendChild(msg);
+    return;
+  }
+
+  emptyEl.style.display = "none";
+  items.forEach((title) => {
+    const pending = isPending(title);
+    const row = makeResultRow(title + (pending ? " (pending sync)" : ""), "wish", "Wishlist", title);
+    resultsEl.appendChild(row);
+  });
+}
+
+// Type-to-search against both your library and wishlist - the original
+// behavior: a checkmark-style tag if you already have it, or a button to
+// add it to the wishlist if nothing matched at all.
+function renderSearchMode(query, resultsEl, emptyEl) {
   if (!query) {
     emptyEl.style.display = "none";
     return;
@@ -234,7 +310,6 @@ function render() {
 
   if (matches.length === 0) {
     emptyEl.style.display = "block";
-    emptyEl.innerHTML = "";
     const msg = document.createElement("div");
     msg.textContent = "No matches in your library or wishlist.";
     emptyEl.appendChild(msg);
@@ -253,27 +328,7 @@ function render() {
 
   emptyEl.style.display = "none";
   matches.forEach((m) => {
-    const div = document.createElement("div");
-    div.className = "result";
-
-    const text = document.createElement("span");
-    text.textContent = m.text;
-    div.appendChild(text);
-
-    const tag = document.createElement("span");
-    tag.className = "tag " + m.tagClass;
-    tag.textContent = m.tagText;
-    div.appendChild(tag);
-
-    if (m.wishlistTitle) {
-      const removeBtn = document.createElement("button");
-      removeBtn.className = "removeBtn";
-      removeBtn.textContent = "Remove";
-      removeBtn.addEventListener("click", () => removeFromWishlistLocal(m.wishlistTitle));
-      div.appendChild(removeBtn);
-    }
-
-    resultsEl.appendChild(div);
+    resultsEl.appendChild(makeResultRow(m.text, m.tagClass, m.tagText, m.wishlistTitle));
   });
 }
 
@@ -288,6 +343,7 @@ function init() {
 
   document.getElementById("q").addEventListener("input", render);
   document.getElementById("syncBtn").addEventListener("click", syncNow);
+  document.getElementById("modeToggle").addEventListener("click", toggleMode);
 
   window.addEventListener("online", () => {
     setStatus("Back online - syncing...");

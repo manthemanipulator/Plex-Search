@@ -54,7 +54,25 @@
     background: #222;
     color: #eee;
   }
-  #count { margin-top: 8px; color: #888; font-size: 13px; }
+  #modeRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    gap: 8px;
+  }
+  #count { color: #888; font-size: 13px; }
+  #modeToggle {
+    background: #222;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  #modeToggle:active { background: #333; }
 
   .result {
     padding: 10px 12px;
@@ -115,7 +133,10 @@
   <div id="lastSync" style="font-size:11px;color:#666;margin-top:-8px;margin-bottom:12px;">Never synced yet</div>
 
   <input id="q" type="text" placeholder="Search movies &amp; TV shows..." autofocus autocomplete="off">
-  <div id="count"></div>
+  <div id="modeRow">
+    <div id="count"></div>
+    <button id="modeToggle" type="button">View Wishlist</button>
+  </div>
   <div id="results"></div>
   <div id="empty" style="display:none;"></div>
 
