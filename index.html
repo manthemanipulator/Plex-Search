@@ -36,6 +36,7 @@
     --add-fg: #ffffff;
     --dot-online: #33aa33;
     --dot-offline: #aa3333;
+    --stale-fg: #e0a030;
   }
 
   @media (prefers-color-scheme: light) {
@@ -63,6 +64,7 @@
       --add-fg: #ffffff;
       --dot-online: #2f855a;
       --dot-offline: #c53030;
+      --stale-fg: #b45309;
     }
   }
 
@@ -108,12 +110,13 @@
   }
   #syncBtn:active { background: var(--btn-active); }
 
-  #lastSync {
+  #lastSync, #libraryUpdated {
     font-size: 11px;
     color: var(--faint);
-    margin-top: -8px;
-    margin-bottom: 12px;
   }
+  #lastSync { margin-top: -8px; margin-bottom: 2px; }
+  #libraryUpdated { margin-bottom: 12px; }
+  #libraryUpdated.stale { color: var(--stale-fg); font-weight: 600; }
 
   input#q {
     width: 100%;
@@ -201,7 +204,8 @@
     </div>
     <button id="syncBtn" type="button">Sync Now</button>
   </div>
-  <div id="lastSync">Never synced yet</div>
+  <div id="lastSync">App never synced yet</div>
+  <div id="libraryUpdated">Library data from: unknown</div>
 
   <input id="q" type="text" placeholder="Search movies &amp; TV shows..." autofocus autocomplete="off">
   <div id="modeRow">

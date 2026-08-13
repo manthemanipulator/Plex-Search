@@ -18,14 +18,27 @@ const STORAGE_KEYS = {
   inventory: "plex.inventory",
   wishlist: "plex.wishlist",
   pendingQueue: "plex.pendingQueue",
-  lastSync: "plex.lastSync"
+  lastSync: "plex.lastSync",
+  librarySyncTime: "plex.librarySyncTime"
 };
+
+// How stale the NAS->Sheet library data can get before the UI flags it as
+// suspicious rather than just informational.
+const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 2 days
 
 let state = {
   inventory: [],
   wishlist: [],
   pendingQueue: [],
-  lastSync: null
+  // When THIS APP last successfully talked to the Apps Script API - proves
+  // connectivity, but says nothing about how fresh the data itself is.
+  lastSync: null,
+  // When the Inventory sheet was last actually refreshed from your NAS's
+  // CSV (read from the Sheet's own "Last Synced" column via the API's
+  // syncTime field). If your NAS pipeline breaks, this timestamp freezes
+  // even while `lastSync` above keeps updating every time you open the
+  // app - that's the distinction that actually matters.
+  librarySyncTime: null
 };
 
 let isSyncing = false;
@@ -41,9 +54,10 @@ function loadLocalData() {
     state.wishlist = JSON.parse(localStorage.getItem(STORAGE_KEYS.wishlist) || "[]");
     state.pendingQueue = JSON.parse(localStorage.getItem(STORAGE_KEYS.pendingQueue) || "[]");
     state.lastSync = localStorage.getItem(STORAGE_KEYS.lastSync) || null;
+    state.librarySyncTime = localStorage.getItem(STORAGE_KEYS.librarySyncTime) || null;
   } catch (err) {
     console.error("Failed to load cached data, starting fresh.", err);
-    state = { inventory: [], wishlist: [], pendingQueue: [], lastSync: null };
+    state = { inventory: [], wishlist: [], pendingQueue: [], lastSync: null, librarySyncTime: null };
   }
 }
 
@@ -52,6 +66,19 @@ function saveLocalData() {
   localStorage.setItem(STORAGE_KEYS.wishlist, JSON.stringify(state.wishlist));
   localStorage.setItem(STORAGE_KEYS.pendingQueue, JSON.stringify(state.pendingQueue));
   if (state.lastSync) localStorage.setItem(STORAGE_KEYS.lastSync, state.lastSync);
+  if (state.librarySyncTime) localStorage.setItem(STORAGE_KEYS.librarySyncTime, state.librarySyncTime);
+}
+
+// A library sync timestamp older than STALE_THRESHOLD_MS gets flagged in
+// the UI. Parsing is defensive - if the value isn't a recognizable date
+// (format varies slightly depending on whether Sheets auto-converted the
+// CSV's timestamp string to a real Date cell), we just skip the flag
+// rather than show something wrong.
+function isLibraryDataStale() {
+  if (!state.librarySyncTime) return false;
+  const parsed = new Date(state.librarySyncTime);
+  if (isNaN(parsed.getTime())) return false;
+  return Date.now() - parsed.getTime() > STALE_THRESHOLD_MS;
 }
 
 // ---------------------------------------------------------------------
@@ -161,6 +188,10 @@ async function syncNow() {
     const fresh = await fetchLatestData();
     state.inventory = fresh.inventory || [];
     state.wishlist = fresh.wishlist || [];
+    // fresh.syncTime comes from the Sheet's own "Last Synced" column (set
+    // by your NAS script), NOT from this fetch happening successfully -
+    // it only advances when the NAS pipeline actually writes new data.
+    if (fresh.syncTime) state.librarySyncTime = fresh.syncTime;
     state.lastSync = new Date().toLocaleString();
     saveLocalData();
     render();
@@ -180,10 +211,20 @@ async function syncNow() {
 function setStatus(text) {
   const el = document.getElementById("status");
   if (el) el.textContent = text;
+
   const lastSyncEl = document.getElementById("lastSync");
   if (lastSyncEl) {
-    lastSyncEl.textContent = state.lastSync ? "Last synced: " + state.lastSync : "Never synced yet";
+    lastSyncEl.textContent = state.lastSync ? "App synced: " + state.lastSync : "App never synced yet";
   }
+
+  const libraryEl = document.getElementById("libraryUpdated");
+  if (libraryEl) {
+    libraryEl.textContent = state.librarySyncTime
+      ? "Library data from: " + state.librarySyncTime
+      : "Library data from: unknown";
+    libraryEl.className = isLibraryDataStale() ? "stale" : "";
+  }
+
   const onlineEl = document.getElementById("onlineDot");
   if (onlineEl) {
     onlineEl.className = navigator.onLine ? "dot online" : "dot offline";
