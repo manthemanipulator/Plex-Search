@@ -7,11 +7,12 @@
 const CONFIG = {
   // Your Apps Script Web App URL, e.g.
   // "https://script.google.com/macros/s/AKfycb.../exec"
-  API_URL: "https://script.google.com/macros/s/AKfycby66-WJTUbG_Q2rWJLiMgUanH1uQKo7oB3G78HZw1PHbNkoc_-ankCkr7FldRkfWX7n/exec",
-
-  // Must exactly match the secret you set via the "Set API Secret" menu
-  // item in the Google Sheet.
-  API_SECRET: "k9F7#mP2$xL5!vR8*qN4&zT1"
+  // Safe to leave as a plain constant here - useless without the secret
+  // below, which is deliberately NOT stored in this file (see
+  // getStoredSecret/ensureSecret). This file is served as-is to anyone
+  // who visits the site, public repo or not, so anything that actually
+  // grants access can't live here.
+  API_URL: "https://script.google.com/macros/s/AKfycby66-WJTUbG_Q2rWJLiMgUanH1uQKo7oB3G78HZw1PHbNkoc_-ankCkr7FldRkfWX7n/exec"
 };
 
 const STORAGE_KEYS = {
@@ -19,7 +20,8 @@ const STORAGE_KEYS = {
   wishlist: "plex.wishlist",
   pendingQueue: "plex.pendingQueue",
   lastSync: "plex.lastSync",
-  librarySyncTime: "plex.librarySyncTime"
+  librarySyncTime: "plex.librarySyncTime",
+  apiSecret: "plex.apiSecret"
 };
 
 // How stale the NAS->Sheet library data can get before the UI flags it as
@@ -128,6 +130,35 @@ function removeFromWishlistLocal(title) {
 }
 
 // ---------------------------------------------------------------------
+// API secret - deliberately NOT a source-code constant. It's asked for
+// once and kept only in this device's localStorage, so it never ships as
+// part of the site anyone visiting the URL (or browsing the public repo)
+// automatically receives.
+// ---------------------------------------------------------------------
+
+function getStoredSecret() {
+  return localStorage.getItem(STORAGE_KEYS.apiSecret) || null;
+}
+
+function ensureSecret() {
+  let secret = getStoredSecret();
+  if (secret) return secret;
+  secret = window.prompt(
+    "Enter your Plex Search API secret (the value you set via " +
+    "'Set API Secret' in the Google Sheet's Plex Tools menu):"
+  );
+  if (secret) {
+    secret = secret.trim();
+    if (secret) localStorage.setItem(STORAGE_KEYS.apiSecret, secret);
+  }
+  return secret || null;
+}
+
+function forgetStoredSecret() {
+  localStorage.removeItem(STORAGE_KEYS.apiSecret);
+}
+
+// ---------------------------------------------------------------------
 // Sync with the Apps Script API
 // ---------------------------------------------------------------------
 
@@ -144,10 +175,11 @@ async function postToApi(payload) {
   return res.json();
 }
 
-async function fetchLatestData() {
-  const res = await fetch(CONFIG.API_URL, { method: "GET" });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return res.json();
+// Fetching your library/wishlist goes through the same authenticated
+// POST path as writes now, instead of an open GET anyone with the URL
+// could read - see the "getData" action added to doPost in Code.gs.
+async function fetchLatestData(secret) {
+  return postToApi({ action: "getData", secret: secret });
 }
 
 async function syncNow() {
@@ -158,6 +190,12 @@ async function syncNow() {
   }
   if (!CONFIG.API_URL || CONFIG.API_URL.indexOf("PASTE_YOUR") === 0) {
     setStatus("Not configured yet - set API_URL in app.js");
+    return;
+  }
+
+  const secret = ensureSecret();
+  if (!secret) {
+    setStatus("API secret needed to sync - tap Sync Now to enter it");
     return;
   }
 
@@ -172,11 +210,18 @@ async function syncNow() {
       const result = await postToApi({
         action: item.action,
         title: item.title,
-        secret: CONFIG.API_SECRET
+        secret: secret
       });
       if (!result.ok) {
         console.error("Sync item rejected by server:", item, result.error);
-        setStatus("Sync error: " + (result.error || "unknown"));
+        if (result.error === "Unauthorized") {
+          // Wrong/stale secret - forget it so the next attempt re-prompts
+          // instead of failing silently forever.
+          forgetStoredSecret();
+          setStatus("Wrong API secret - tap Sync Now to re-enter it");
+        } else {
+          setStatus("Sync error: " + (result.error || "unknown"));
+        }
         isSyncing = false;
         return;
       }
@@ -185,7 +230,17 @@ async function syncNow() {
     }
 
     // Pull the freshest inventory/wishlist now that our writes landed.
-    const fresh = await fetchLatestData();
+    const fresh = await fetchLatestData(secret);
+    if (!fresh.ok && fresh.error) {
+      if (fresh.error === "Unauthorized") {
+        forgetStoredSecret();
+        setStatus("Wrong API secret - tap Sync Now to re-enter it");
+      } else {
+        setStatus("Sync error: " + fresh.error);
+      }
+      isSyncing = false;
+      return;
+    }
     state.inventory = fresh.inventory || [];
     state.wishlist = fresh.wishlist || [];
     // fresh.syncTime comes from the Sheet's own "Last Synced" column (set

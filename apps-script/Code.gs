@@ -6,10 +6,17 @@
 // drops in Google Drive gets automatically imported into the
 // "Inventory" sheet on a schedule, no manual steps required once set up.
 //
+// Both reading (library/wishlist) and writing (add/remove) require the
+// shared secret set below - doGet on its own returns nothing, so simply
+// knowing the Web App URL isn't enough to see or change any data. The
+// secret is NOT stored in the PWA's source code (that ships publicly to
+// anyone who visits the site) - the app prompts for it once and keeps it
+// only in that device's local storage.
+//
 // One-time setup after pasting this in:
 //   1. Run "Plex Tools" > "Set API Secret" from the Sheet menu, enter a
-//      long random string. Paste that SAME string into the PWA's
-//      app.js CONFIG.API_SECRET.
+//      long random string. You'll be prompted for this SAME string the
+//      first time you open the PWA.
 //   2. Run "Plex Tools" > "Set Up Automatic Sync" once, so the Inventory
 //      sheet refreshes from Drive on its own instead of needing a
 //      manual "Sync Library Now" click.
@@ -210,15 +217,18 @@ function getOfflineData() {
 // 10. Web App entry points - JSON API for the PWA
 // =====================================================================
 
-// GET <web-app-url> -> { inventory: [...], wishlist: [...], syncTime: "..." }
+// GET <web-app-url> -> deliberately serves nothing. Reading your library
+// and wishlist requires the same secret as writing now (see doPost's
+// "getData" action below), so a bare GET - which anyone with the URL
+// could send, no secret needed - can't leak anything.
 function doGet(e) {
-  var data = getOfflineData();
-  return jsonResponse_(data);
+  return jsonResponse_({ ok: false, error: "Use POST with your API secret to read or write data." });
 }
 
 // POST <web-app-url> with JSON body:
-//   { action: "add",    title: "Some Movie", secret: "..." }
-//   { action: "remove", title: "Some Movie", secret: "..." }
+//   { action: "getData",                       secret: "..." }
+//   { action: "add",    title: "Some Movie",    secret: "..." }
+//   { action: "remove", title: "Some Movie",    secret: "..." }
 function doPost(e) {
   var body;
   try {
@@ -233,6 +243,12 @@ function doPost(e) {
   }
   if (body.secret !== expectedSecret) {
     return jsonResponse_({ ok: false, error: "Unauthorized" });
+  }
+
+  if (body.action === 'getData') {
+    var data = getOfflineData();
+    data.ok = true;
+    return jsonResponse_(data);
   }
 
   if (!body.title) {
