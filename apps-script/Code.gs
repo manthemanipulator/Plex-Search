@@ -1,22 +1,19 @@
 // =====================================================================
 // Plex Search - Apps Script backend
 //
-// This project is now a JSON API for the PWA front end (hosted on
-// GitHub Pages), instead of serving the UI itself. Everything about how
-// your library data gets into the "Inventory" sheet is UNCHANGED - the
-// CSV-from-Drive sync, the Sheet structure, the search-matching logic.
-//
-// New in this version:
-//   - doGet returns your inventory + wishlist as JSON instead of HTML.
-//   - doPost handles adding/removing wishlist items, protected by a
-//     shared secret so a leaked URL can't be used to spam your wishlist.
-//   - A "Set API Secret" menu item to generate/store that secret.
+// This project is a JSON API for the PWA front end (hosted on GitHub
+// Pages). It also owns pulling your library data in: the CSV your NAS
+// drops in Google Drive gets automatically imported into the
+// "Inventory" sheet on a schedule, no manual steps required once set up.
 //
 // One-time setup after pasting this in:
 //   1. Run "Plex Tools" > "Set API Secret" from the Sheet menu, enter a
 //      long random string. Paste that SAME string into the PWA's
 //      app.js CONFIG.API_SECRET.
-//   2. Deploy > Manage deployments > Edit (pencil icon) > New version,
+//   2. Run "Plex Tools" > "Set Up Automatic Sync" once, so the Inventory
+//      sheet refreshes from Drive on its own instead of needing a
+//      manual "Sync Library Now" click.
+//   3. Deploy > Manage deployments > Edit (pencil icon) > New version,
 //      to publish this code to your existing Web App URL. Copy that
 //      URL into app.js CONFIG.API_URL.
 // =====================================================================
@@ -27,24 +24,44 @@ function onOpen() {
       .createMenu('Plex Tools')
       .addItem('Sync Library Now', 'updatePlexSheet')
       .addItem('Set API Secret', 'promptSetApiSecret')
-      .addItem('Set Up Monthly Email Backup', 'createMonthlyEmailTrigger')
+      .addItem('Set Up Automatic Sync', 'createLibrarySyncTrigger')
       .addToUi();
 }
 
-// 2. Nightly Sync Automation (unchanged)
+// 2. Pull the latest CSV from Drive into the Inventory sheet. Runs
+// automatically every few hours once "Set Up Automatic Sync" has been
+// run (see createLibrarySyncTrigger below) - you can still trigger it
+// manually via the menu any time too.
 function updatePlexSheet() {
   var fileName = "plex_library_export.csv";
   var files = DriveApp.getFilesByName(fileName);
-  if (files.hasNext()) {
-    var file = files.next();
-    var csvText = file.getBlob().getDataAsString();
-    var csvData = Utilities.parseCsv(csvText);
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Inventory");
-    sheet.clearContents();
-    sheet.getRange(1, 1, csvData.length, csvData[0].length).setValues(csvData);
-  } else {
+  if (!files.hasNext()) {
     Logger.log("Error: Could not find " + fileName + " in Google Drive.");
+    return;
   }
+
+  var file = files.next();
+  var csvText = file.getBlob().getDataAsString();
+  var csvData = Utilities.parseCsv(csvText);
+
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Inventory");
+  var newRowCount = csvData.length - 1; // minus header row
+  var currentRowCount = sheet.getLastRow() - 1;
+
+  // Safety check: refuse to overwrite a healthy library with something
+  // that looks badly broken (e.g. the NAS scan failed partway through
+  // and wrote a near-empty CSV, or the Drive sync delivered a partial
+  // file). Only blocks an update that would shrink the library by more
+  // than half - genuinely removing titles is still allowed through.
+  if (currentRowCount > 10 && newRowCount < currentRowCount / 2) {
+    Logger.log("Refused to update Inventory: new CSV has " + newRowCount +
+        " rows vs " + currentRowCount + " currently in the sheet - looks like a bad sync, skipping.");
+    return;
+  }
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, csvData.length, csvData[0].length).setValues(csvData);
+  Logger.log("Inventory updated: " + newRowCount + " titles.");
 }
 
 // 3. Smart Keyword Search (unchanged - kept as a server-side fallback;
@@ -159,8 +176,7 @@ function getLastSyncTime() {
   return "Never";
 }
 
-// 9. Full data dump - now the payload for BOTH the PWA's doGet API
-// response and the "Save Offline Copy"/monthly-email HTML snapshot.
+// 9. Full data dump - the payload for the PWA's doGet API response.
 function getOfflineData() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var invSheet = ss.getSheetByName("Inventory");
@@ -260,111 +276,29 @@ function promptSetApiSecret() {
   }
 }
 
-// =====================================================================
-// 11. Optional legacy fallback: monthly emailed offline snapshot.
-// Not required once the PWA is set up (the PWA syncs continuously
-// whenever you have signal), but harmless to leave running as a
-// belt-and-suspenders backup.
-// =====================================================================
-
-function emailMonthlyOfflineCopy() {
-  var data = getOfflineData();
-  var html = buildOfflineHtml_(data.inventory, data.wishlist, data.syncTime);
-  var blob = Utilities.newBlob(html, 'text/html', 'Plex_Offline_Search.html');
-  var email = Session.getActiveUser().getEmail();
-
-  MailApp.sendEmail({
-    to: email,
-    subject: 'Plex Offline Search - Monthly Backup (' + data.inventory.length + ' titles)',
-    body: 'Attached is this month\'s offline snapshot of your Plex library: ' +
-          data.inventory.length + ' titles, ' + data.wishlist.length + ' on the wishlist.\n\n' +
-          'This is a legacy backup - if the Plex Search PWA is set up and syncing, ' +
-          'you likely don\'t need this file, but it costs nothing to keep as a fallback.\n\n' +
-          'Last library sync: ' + data.syncTime,
-    attachments: [blob]
-  });
-}
-
-function createMonthlyEmailTrigger() {
+// One-time setup: creates a recurring trigger that automatically pulls
+// the latest CSV from Drive into the Inventory sheet, so this doesn't
+// depend on remembering to click "Sync Library Now" yourself. Run once
+// via the Plex Tools menu; safe to re-run (clears any existing trigger
+// for this function first, so it won't double up).
+function createLibrarySyncTrigger() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'emailMonthlyOfflineCopy') {
+    if (triggers[i].getHandlerFunction() === 'updatePlexSheet') {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
-  ScriptApp.newTrigger('emailMonthlyOfflineCopy')
+  ScriptApp.newTrigger('updatePlexSheet')
       .timeBased()
-      .onMonthDay(1)
-      .atHour(6)
+      .everyHours(6)
       .create();
 
-  Logger.log('Monthly offline-copy email trigger created.');
+  Logger.log('Automatic library sync trigger created (runs updatePlexSheet every 6 hours).');
   try {
-    SpreadsheetApp.getUi().alert('Monthly email backup is set up. You\'ll get a fresh offline copy by email on the 1st of every month.');
+    SpreadsheetApp.getUi().alert(
+        'Automatic sync is set up. Your Inventory sheet will refresh from the latest CSV on ' +
+        'Drive every 6 hours on its own - no more manual "Sync Library Now" clicks needed.');
   } catch (e) {
     // Running from the script editor rather than the sheet UI - no dialog available, that's fine.
   }
-}
-
-function buildOfflineHtml_(inventory, wishlist, syncTime) {
-  var invJson = JSON.stringify(inventory).replace(/</g, '\\u003c');
-  var wishJson = JSON.stringify(wishlist).replace(/</g, '\\u003c');
-
-  return '<!DOCTYPE html>' +
-'<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-'<title>Plex Offline Search</title><style>' +
-'body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:600px;margin:0 auto;padding:16px;background:#111;color:#eee;}' +
-'h1{font-size:20px;} #meta{color:#888;font-size:13px;margin-bottom:16px;}' +
-'input{width:100%;box-sizing:border-box;padding:12px;font-size:16px;border-radius:8px;border:1px solid #444;background:#222;color:#eee;}' +
-'.result{padding:10px 12px;margin-top:8px;border-radius:8px;background:#1e1e1e;}' +
-'.tag{display:inline-block;font-size:11px;padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;}' +
-'.tv{background:#2a4d69;color:#bcd;} .movie{background:#4d2a2a;color:#dbc;} .wish{background:#4d472a;color:#ddc;}' +
-'#empty{color:#888;margin-top:16px;}' +
-'</style></head><body>' +
-'<h1>Plex Offline Search</h1>' +
-'<div id="meta">Snapshot from last sync: ' + syncTime + '</div>' +
-'<input id="q" type="text" placeholder="Search movies &amp; TV shows..." autofocus>' +
-'<div id="count" style="margin-top:8px;color:#888;font-size:13px;"></div>' +
-'<div id="results"></div>' +
-'<div id="empty" style="display:none;">No matches in your library or wishlist.</div>' +
-'<script>' +
-'var inventory = ' + invJson + ';' +
-'var wishlist = ' + wishJson + ';' +
-'function isMatch(title, query) {' +
-'  if (!title) return false;' +
-'  var cleanTitle = title.toLowerCase().replace(/[^\\w\\s]/g, "");' +
-'  var cleanQuery = query.toLowerCase().replace(/[^\\w\\s]/g, "");' +
-'  var words = cleanQuery.split(/\\s+/).filter(Boolean);' +
-'  if (words.length === 0) return false;' +
-'  return words.every(function(w) { return cleanTitle.indexOf(w) !== -1; });' +
-'}' +
-'var q = document.getElementById("q");' +
-'var resultsEl = document.getElementById("results");' +
-'var emptyEl = document.getElementById("empty");' +
-'var countEl = document.getElementById("count");' +
-'countEl.textContent = inventory.length + " titles in library, " + wishlist.length + " on wishlist";' +
-'q.addEventListener("input", function() {' +
-'  var query = q.value.trim();' +
-'  resultsEl.innerHTML = "";' +
-'  if (!query) { emptyEl.style.display = "none"; return; }' +
-'  var matches = [];' +
-'  inventory.forEach(function(item) {' +
-'    if (isMatch(item.title, query)) matches.push({ text: item.title + (item.year ? " (" + item.year + ")" : ""), tagClass: item.type === "TV Show" ? "tv" : "movie", tagText: item.type === "TV Show" ? "TV" : "Movie" });' +
-'  });' +
-'  wishlist.forEach(function(title) {' +
-'    if (isMatch(title, query)) matches.push({ text: title, tagClass: "wish", tagText: "Wishlist" });' +
-'  });' +
-'  emptyEl.style.display = matches.length ? "none" : "block";' +
-'  matches.forEach(function(m) {' +
-'    var div = document.createElement("div");' +
-'    div.className = "result";' +
-'    div.textContent = m.text;' +
-'    var tag = document.createElement("span");' +
-'    tag.className = "tag " + m.tagClass;' +
-'    tag.textContent = m.tagText;' +
-'    div.appendChild(tag);' +
-'    resultsEl.appendChild(div);' +
-'  });' +
-'});' +
-'</script></body></html>';
 }
