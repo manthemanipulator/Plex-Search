@@ -109,13 +109,21 @@
     gap: 10px;
   }
 
-  /* Two small status dots replace the old always-visible status text -
+  /* Two small labeled dots replace the old always-visible status text -
      one for whether the app itself is syncing OK, one for whether the
      library data pulled from the NAS is fresh. Tap the hamburger for
      the actual timestamps behind them. */
+  .statusItem {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
   .statusDot {
-    width: 11px;
-    height: 11px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     display: inline-block;
     flex-shrink: 0;
@@ -239,8 +247,8 @@
     <div id="topBar">
       <h1>Plex Search</h1>
       <div id="topControls">
-        <span class="statusDot neutral" id="appSyncDot" title="App sync status"></span>
-        <span class="statusDot neutral" id="librarySyncDot" title="Library data status"></span>
+        <span class="statusItem" title="App sync status">App <span class="statusDot neutral" id="appSyncDot"></span></span>
+        <span class="statusItem" title="Library data status">Library <span class="statusDot neutral" id="librarySyncDot"></span></span>
         <button id="syncBtn" type="button">Sync Now</button>
         <button id="menuBtn" type="button" aria-label="Sync details" aria-expanded="false">&#9776;</button>
       </div>
