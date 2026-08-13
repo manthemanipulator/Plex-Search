@@ -8,17 +8,79 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f7f7f7" media="(prefers-color-scheme: light)">
 <style>
+  :root {
+    color-scheme: light dark;
+    --bg: #111111;
+    --fg: #eeeeee;
+    --muted: #888888;
+    --faint: #666666;
+    --border: #444444;
+    --input-bg: #222222;
+    --card-bg: #1e1e1e;
+    --btn-bg: #222222;
+    --btn-fg: #cccccc;
+    --btn-active: #333333;
+    --tag-tv-bg: #2a4d69;
+    --tag-tv-fg: #bbccdd;
+    --tag-movie-bg: #4d2a2a;
+    --tag-movie-fg: #ddbbcc;
+    --tag-wish-bg: #4d472a;
+    --tag-wish-fg: #dddccc;
+    --remove-border: #555555;
+    --remove-fg: #aaaaaa;
+    --add-bg: #2a6b4d;
+    --add-bg-active: #1f5038;
+    --add-fg: #ffffff;
+    --dot-online: #33aa33;
+    --dot-offline: #aa3333;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f7f7f7;
+      --fg: #1a1a1a;
+      --muted: #666666;
+      --faint: #888888;
+      --border: #cccccc;
+      --input-bg: #ffffff;
+      --card-bg: #ffffff;
+      --btn-bg: #ececec;
+      --btn-fg: #333333;
+      --btn-active: #dddddd;
+      --tag-tv-bg: #dbeafe;
+      --tag-tv-fg: #1e4d8c;
+      --tag-movie-bg: #fde2e2;
+      --tag-movie-fg: #9b2c2c;
+      --tag-wish-bg: #fef3c7;
+      --tag-wish-fg: #8a6a10;
+      --remove-border: #cccccc;
+      --remove-fg: #555555;
+      --add-bg: #2f855a;
+      --add-bg-active: #276749;
+      --add-fg: #ffffff;
+      --dot-online: #2f855a;
+      --dot-offline: #c53030;
+    }
+  }
+
   * { box-sizing: border-box; }
   body {
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     max-width: 600px;
     margin: 0 auto;
     padding: 16px;
-    padding-bottom: 40px;
-    background: #111;
-    color: #eee;
+    /* Push content below the notch/status bar (needed because the iOS
+       status bar is "black-translucent", i.e. it overlays the page
+       instead of pushing it down) and above the home indicator. */
+    padding-top: max(16px, env(safe-area-inset-top));
+    padding-bottom: max(40px, env(safe-area-inset-bottom) + 24px);
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    background: var(--bg);
+    color: var(--fg);
   }
   h1 { font-size: 20px; margin-bottom: 4px; }
 
@@ -27,32 +89,39 @@
     align-items: center;
     justify-content: space-between;
     font-size: 12px;
-    color: #888;
+    color: var(--muted);
     margin-bottom: 14px;
     gap: 8px;
   }
   #statusLeft { display: flex; align-items: center; gap: 6px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-  .dot.online { background: #3a3; }
-  .dot.offline { background: #a33; }
+  .dot.online { background: var(--dot-online); }
+  .dot.offline { background: var(--dot-offline); }
   #syncBtn {
-    background: #222;
-    color: #ccc;
-    border: 1px solid #444;
+    background: var(--btn-bg);
+    color: var(--btn-fg);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 12px;
   }
-  #syncBtn:active { background: #333; }
+  #syncBtn:active { background: var(--btn-active); }
+
+  #lastSync {
+    font-size: 11px;
+    color: var(--faint);
+    margin-top: -8px;
+    margin-bottom: 12px;
+  }
 
   input#q {
     width: 100%;
     padding: 12px;
     font-size: 16px;
     border-radius: 8px;
-    border: 1px solid #444;
-    background: #222;
-    color: #eee;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--fg);
   }
   #modeRow {
     display: flex;
@@ -61,24 +130,25 @@
     margin-top: 8px;
     gap: 8px;
   }
-  #count { color: #888; font-size: 13px; }
+  #count { color: var(--muted); font-size: 13px; }
   #modeToggle {
-    background: #222;
-    color: #ccc;
-    border: 1px solid #444;
+    background: var(--btn-bg);
+    color: var(--btn-fg);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 12px;
     white-space: nowrap;
     flex-shrink: 0;
   }
-  #modeToggle:active { background: #333; }
+  #modeToggle:active { background: var(--btn-active); }
 
   .result {
     padding: 10px 12px;
     margin-top: 8px;
     border-radius: 8px;
-    background: #1e1e1e;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -92,20 +162,20 @@
     border-radius: 4px;
     vertical-align: middle;
   }
-  .tv { background: #2a4d69; color: #bcd; }
-  .movie { background: #4d2a2a; color: #dbc; }
-  .wish { background: #4d472a; color: #ddc; }
+  .tv { background: var(--tag-tv-bg); color: var(--tag-tv-fg); }
+  .movie { background: var(--tag-movie-bg); color: var(--tag-movie-fg); }
+  .wish { background: var(--tag-wish-bg); color: var(--tag-wish-fg); }
 
   .removeBtn {
     background: none;
-    border: 1px solid #555;
-    color: #aaa;
+    border: 1px solid var(--remove-border);
+    color: var(--remove-fg);
     border-radius: 6px;
     padding: 3px 8px;
     font-size: 11px;
   }
 
-  #empty { color: #888; margin-top: 16px; }
+  #empty { color: var(--muted); margin-top: 16px; }
   .addBtn {
     display: block;
     margin-top: 12px;
@@ -114,10 +184,10 @@
     font-size: 15px;
     border-radius: 8px;
     border: none;
-    background: #2a6b4d;
-    color: #fff;
+    background: var(--add-bg);
+    color: var(--add-fg);
   }
-  .addBtn:active { background: #1f5038; }
+  .addBtn:active { background: var(--add-bg-active); }
 </style>
 </head>
 <body>
@@ -130,7 +200,7 @@
     </div>
     <button id="syncBtn" type="button">Sync Now</button>
   </div>
-  <div id="lastSync" style="font-size:11px;color:#666;margin-top:-8px;margin-bottom:12px;">Never synced yet</div>
+  <div id="lastSync">Never synced yet</div>
 
   <input id="q" type="text" placeholder="Search movies &amp; TV shows..." autofocus autocomplete="off">
   <div id="modeRow">
