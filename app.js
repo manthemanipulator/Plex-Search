@@ -207,6 +207,18 @@ async function syncNow() {
     // don't silently drop or reorder anything - it'll retry next sync.
     while (state.pendingQueue.length > 0) {
       const item = state.pendingQueue[0];
+
+      // Defensive: a queued item with no title can't ever be synced, and
+      // without this it would retry the exact same broken item forever,
+      // permanently blocking every future sync behind a "Missing title"
+      // error. Drop it locally and move on instead.
+      if (!item.title) {
+        console.error("Dropping malformed pending queue item (no title):", item);
+        state.pendingQueue.shift();
+        saveLocalData();
+        continue;
+      }
+
       const result = await postToApi({
         action: item.action,
         title: item.title,
