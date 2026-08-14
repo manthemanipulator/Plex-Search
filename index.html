@@ -8,6 +8,13 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<!-- Keep both: apple-mobile-web-app-capable is still what iOS Safari
+     actually reads for true standalone (no browser chrome) mode - Apple's
+     own docs still require it, with no replacement. mobile-web-app-capable
+     is the newer cross-browser version Chrome's console nudges toward;
+     adding it alongside costs nothing and quiets that warning without
+     touching iOS behavior at all. -->
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
