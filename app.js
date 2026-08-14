@@ -345,28 +345,54 @@ function toggleDetailsPanel() {
 // how you tell "did my phone actually pick up the latest push" apart from
 // "the site changed but this device is still on an old cached version."
 function getActiveServiceWorkerVersion() {
+  function askController() {
+    return new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        navigator.serviceWorker.removeEventListener("message", onMessage);
+        resolve(null);
+      }, 1500);
+      function onMessage(event) {
+        if (event.data && event.data.type === "VERSION") {
+          clearTimeout(timeoutId);
+          navigator.serviceWorker.removeEventListener("message", onMessage);
+          resolve(event.data.version);
+        }
+      }
+      navigator.serviceWorker.addEventListener("message", onMessage);
+      navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" });
+    });
+  }
+
   return new Promise((resolve) => {
     if (!("serviceWorker" in navigator)) {
       resolve("service workers not supported in this browser");
       return;
     }
-    if (!navigator.serviceWorker.controller) {
-      resolve("no service worker controlling this page yet - try reloading");
+    if (navigator.serviceWorker.controller) {
+      askController().then((v) => resolve(v || "no response - try reloading"));
       return;
     }
-    const timeoutId = setTimeout(() => {
-      navigator.serviceWorker.removeEventListener("message", onMessage);
-      resolve("no response - try reloading");
-    }, 1500);
-    function onMessage(event) {
-      if (event.data && event.data.type === "VERSION") {
-        clearTimeout(timeoutId);
-        navigator.serviceWorker.removeEventListener("message", onMessage);
-        resolve(event.data.version);
-      }
-    }
-    navigator.serviceWorker.addEventListener("message", onMessage);
-    navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" });
+
+    // No controller yet is expected for a brief moment right after a
+    // fresh install/update, before the new service worker's
+    // self.clients.claim() has actually taken effect - it doesn't
+    // require a manual reload, just a moment. Poll for up to ~3 seconds
+    // before actually telling the user to reload.
+    navigator.serviceWorker.ready.then(() => {
+      let attempts = 0;
+      (function tryAgain() {
+        if (navigator.serviceWorker.controller) {
+          askController().then((v) => resolve(v || "no response - try reloading"));
+          return;
+        }
+        attempts++;
+        if (attempts >= 6) {
+          resolve("no service worker controlling this page yet - try reloading");
+          return;
+        }
+        setTimeout(tryAgain, 500);
+      })();
+    });
   });
 }
 
