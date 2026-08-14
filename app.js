@@ -407,7 +407,12 @@ function refreshAppBuildLine() {
 function renderCounts() {
   const countEl = document.getElementById("count");
   if (countEl) {
-    countEl.textContent = state.inventory.length + " titles in library, " + state.wishlist.length + " on wishlist";
+    // Movies vs TV shows, not a combined total - matches the original
+    // design. The wishlist count isn't repeated here since it's already
+    // shown on the "View Wishlist" button right next to this.
+    const movieCount = state.inventory.filter((item) => item.type !== "TV Show").length;
+    const tvCount = state.inventory.length - movieCount;
+    countEl.textContent = movieCount + " movies, " + tvCount + " TV shows";
   }
   const toggleBtn = document.getElementById("modeToggle");
   if (toggleBtn) {
