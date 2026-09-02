@@ -20,7 +20,7 @@ const CONFIG = {
   // "http://192.168.1.50:13378" on home wifi, or your Tailscale address
   // once that's set up. This is just a link destination, not a secret -
   // fine to leave as a plain constant same as API_URL above.
-  ABS_URL: "PASTE_YOUR_AUDIOBOOKSHELF_URL_HERE"
+  ABS_URL: "http://192.168.68.11:13378"
 };
 
 const STORAGE_KEYS = {
