@@ -1,7 +1,7 @@
 {
-  "name": "Plex Search",
-  "short_name": "Plex Search",
-  "description": "Offline-capable search for your Plex library and wishlist",
+  "name": "Media Search",
+  "short_name": "Media Search",
+  "description": "Offline-capable search for your Plex library, Audiobookshelf library, and wishlist",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
