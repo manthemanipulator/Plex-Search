@@ -61,6 +61,22 @@ let isSyncing = false;
 let mode = "search"; // "search" (type to find something) or "wishlist" (browse everything on it)
 let typeFilter = "all"; // "all" | "video" | "audiobook" - only applies in search mode
 
+// What a wishlist entry can be tagged as - lets you tell apart "The
+// Martian (movie)" from "The Martian (audiobook)" at a glance instead of
+// wishlist items all looking identical. tagClass reuses the exact same
+// color classes as library results (see CSS), so a wishlist "Movie" tag
+// and an owned "Movie" tag read as the same category at a glance.
+const WISH_TYPES = [
+  { key: "movie", label: "Movie", tagClass: "movie" },
+  { key: "tv", label: "TV Show", tagClass: "tv" },
+  { key: "audiobook", label: "Audiobook", tagClass: "book" },
+  { key: "other", label: "Other", tagClass: "otherType" }
+];
+
+function wishTypeMeta(key) {
+  return WISH_TYPES.find((t) => t.key === key) || WISH_TYPES[WISH_TYPES.length - 1];
+}
+
 // Tracks whether the most recent real sync attempt (not just an early
 // return for being offline/unconfigured) actually succeeded. Drives the
 // app-sync status dot. null = no attempt made yet this session.
@@ -70,11 +86,19 @@ let lastSyncOk = null;
 // Local storage helpers
 // ---------------------------------------------------------------------
 
+// Wishlist entries used to be plain title strings; they're now
+// {title, type} objects so each entry can carry what kind of thing it is.
+// Anything still stored/returned in the old shape gets upgraded here
+// rather than dropped, so nobody's existing wishlist disappears on update.
+function normalizeWishlistEntry(w) {
+  return typeof w === "string" ? { title: w, type: "other" } : w;
+}
+
 function loadLocalData() {
   try {
     state.inventory = JSON.parse(localStorage.getItem(STORAGE_KEYS.inventory) || "[]");
     state.audiobooks = JSON.parse(localStorage.getItem(STORAGE_KEYS.audiobooks) || "[]");
-    state.wishlist = JSON.parse(localStorage.getItem(STORAGE_KEYS.wishlist) || "[]");
+    state.wishlist = (JSON.parse(localStorage.getItem(STORAGE_KEYS.wishlist) || "[]")).map(normalizeWishlistEntry);
     state.pendingQueue = JSON.parse(localStorage.getItem(STORAGE_KEYS.pendingQueue) || "[]");
     state.lastSync = localStorage.getItem(STORAGE_KEYS.lastSync) || null;
     state.librarySyncTime = localStorage.getItem(STORAGE_KEYS.librarySyncTime) || null;
@@ -131,7 +155,7 @@ function audiobookSearchable(item) {
 
 function isInWishlist(title) {
   const clean = title.trim().toLowerCase();
-  return state.wishlist.some((w) => w.trim().toLowerCase() === clean);
+  return state.wishlist.some((w) => w.title.trim().toLowerCase() === clean);
 }
 
 function isPending(title) {
@@ -143,10 +167,11 @@ function isPending(title) {
 // Wishlist actions (optimistic local update + queue for sync)
 // ---------------------------------------------------------------------
 
-function addToWishlistLocal(title) {
+function addToWishlistLocal(title, type) {
   if (isInWishlist(title)) return;
-  state.wishlist.push(title);
-  state.pendingQueue.push({ action: "add", title: title, ts: new Date().toISOString() });
+  const wishType = wishTypeMeta(type).key; // falls back to "other" for anything unrecognized
+  state.wishlist.push({ title: title, type: wishType });
+  state.pendingQueue.push({ action: "add", title: title, type: wishType, ts: new Date().toISOString() });
   saveLocalData();
   render();
   syncNow(); // fire and forget - will just re-queue if offline
@@ -154,7 +179,7 @@ function addToWishlistLocal(title) {
 
 function removeFromWishlistLocal(title) {
   const clean = title.trim().toLowerCase();
-  state.wishlist = state.wishlist.filter((w) => w.trim().toLowerCase() !== clean);
+  state.wishlist = state.wishlist.filter((w) => w.title.trim().toLowerCase() !== clean);
   state.pendingQueue.push({ action: "remove", title: title, ts: new Date().toISOString() });
   saveLocalData();
   render();
@@ -254,6 +279,7 @@ async function syncNow() {
       const result = await postToApi({
         action: item.action,
         title: item.title,
+        type: item.type, // only meaningful for "add"; Code.gs ignores it on "remove"
         secret: secret
       });
       if (!result.ok) {
@@ -289,7 +315,10 @@ async function syncNow() {
     }
     state.inventory = fresh.inventory || [];
     state.audiobooks = fresh.audiobooks || [];
-    state.wishlist = fresh.wishlist || [];
+    // .map(normalizeWishlistEntry) is defensive: if Code.gs hasn't been
+    // redeployed with the type-aware version yet, the Sheet still hands
+    // back plain title strings - this keeps that case from breaking.
+    state.wishlist = (fresh.wishlist || []).map(normalizeWishlistEntry);
     // fresh.syncTime / fresh.audiobookSyncTime come from each sheet's own
     // "last synced" column, NOT from this fetch happening successfully -
     // they only advance when the respective source pipeline (NAS CSV,
@@ -459,7 +488,7 @@ function renderCounts() {
     const movieCount = state.inventory.filter((item) => item.type !== "TV Show").length;
     const tvCount = state.inventory.length - movieCount;
     const bookCount = state.audiobooks.length;
-    countEl.textContent = movieCount + " movies, " + tvCount + " TV, " + bookCount + " audiobooks";
+    countEl.textContent = movieCount + " movies, " + tvCount + " TV Shows, " + bookCount + " audiobooks";
   }
   const toggleBtn = document.getElementById("modeToggle");
   if (toggleBtn) {
@@ -485,7 +514,7 @@ function setTypeFilter(value) {
 }
 
 function makeResultRow(opts) {
-  // opts: { title, sub, tagClass, tagText, wishlistTitle, openUrl }
+  // opts: { title, sub, tags: [{tagClass, tagText}, ...], wishlistTitle, openUrl }
   const div = document.createElement("div");
   div.className = "result";
 
@@ -503,10 +532,15 @@ function makeResultRow(opts) {
   }
   div.appendChild(main);
 
-  const tag = document.createElement("span");
-  tag.className = "tag " + opts.tagClass;
-  tag.textContent = opts.tagText;
-  div.appendChild(tag);
+  // Most rows have one tag (Movie/TV Show/Audiobook); wishlist rows get
+  // two - the type tag plus the gold "Wishlist" tag - so this is a list
+  // now instead of a single tagClass/tagText pair.
+  (opts.tags || []).forEach((t) => {
+    const tag = document.createElement("span");
+    tag.className = "tag " + t.tagClass;
+    tag.textContent = t.tagText;
+    div.appendChild(tag);
+  });
 
   if (opts.openUrl) {
     const openBtn = document.createElement("a");
@@ -550,9 +584,9 @@ function render() {
 // audiobooks filter chips, since wishlist entries aren't typed.
 function renderWishlistMode(query, resultsEl, emptyEl) {
   const items = state.wishlist
-    .filter((title) => !query || isMatch(title, query))
+    .filter((w) => !query || isMatch(w.title, query))
     .slice()
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a, b) => a.title.localeCompare(b.title));
 
   if (items.length === 0) {
     emptyEl.style.display = "block";
@@ -565,13 +599,16 @@ function renderWishlistMode(query, resultsEl, emptyEl) {
   }
 
   emptyEl.style.display = "none";
-  items.forEach((title) => {
-    const pending = isPending(title);
+  items.forEach((w) => {
+    const pending = isPending(w.title);
+    const meta = wishTypeMeta(w.type);
     const row = makeResultRow({
-      title: title + (pending ? " (pending sync)" : ""),
-      tagClass: "wish",
-      tagText: "Wishlist",
-      wishlistTitle: title
+      title: w.title + (pending ? " (pending sync)" : ""),
+      tags: [
+        { tagClass: meta.tagClass, tagText: meta.label },
+        { tagClass: "wish", tagText: "Wishlist" }
+      ],
+      wishlistTitle: w.title
     });
     resultsEl.appendChild(row);
   });
@@ -594,8 +631,7 @@ function renderSearchMode(query, resultsEl, emptyEl) {
       if (isMatch(item.title, query)) {
         matches.push({
           title: item.title + (item.year ? " (" + item.year + ")" : ""),
-          tagClass: item.type === "TV Show" ? "tv" : "movie",
-          tagText: item.type === "TV Show" ? "TV" : "Movie",
+          tags: [{ tagClass: item.type === "TV Show" ? "tv" : "movie", tagText: item.type === "TV Show" ? "TV" : "Movie" }],
           wishlistTitle: null
         });
       }
@@ -620,8 +656,7 @@ function renderSearchMode(query, resultsEl, emptyEl) {
         matches.push({
           title: item.title,
           sub: subParts.join(" · "),
-          tagClass: "book",
-          tagText: "Audiobook",
+          tags: [{ tagClass: "book", tagText: "Audiobook" }],
           wishlistTitle: null,
           openUrl: openUrl
         });
@@ -629,14 +664,17 @@ function renderSearchMode(query, resultsEl, emptyEl) {
     });
   }
 
-  state.wishlist.forEach((title) => {
-    if (isMatch(title, query)) {
-      const pending = isPending(title);
+  state.wishlist.forEach((w) => {
+    if (isMatch(w.title, query)) {
+      const pending = isPending(w.title);
+      const meta = wishTypeMeta(w.type);
       matches.push({
-        title: title + (pending ? " (pending sync)" : ""),
-        tagClass: "wish",
-        tagText: "Wishlist",
-        wishlistTitle: title
+        title: w.title + (pending ? " (pending sync)" : ""),
+        tags: [
+          { tagClass: meta.tagClass, tagText: meta.label },
+          { tagClass: "wish", tagText: "Wishlist" }
+        ],
+        wishlistTitle: w.title
       });
     }
   });
@@ -647,15 +685,28 @@ function renderSearchMode(query, resultsEl, emptyEl) {
     msg.textContent = "No matches in your library or wishlist.";
     emptyEl.appendChild(msg);
 
-    const addBtn = document.createElement("button");
-    addBtn.className = "addBtn";
-    addBtn.textContent = 'Add "' + query + '" to Wishlist';
-    addBtn.addEventListener("click", () => {
-      addToWishlistLocal(query);
-      document.getElementById("q").value = "";
-      render();
+    // Ask what kind of thing this is right when it's added, instead of
+    // every wishlist entry looking the same - this is what tells "The
+    // Martian (movie)" apart from "The Martian (audiobook)" later.
+    const label = document.createElement("div");
+    label.className = "addPrompt";
+    label.textContent = 'Add "' + query + '" to Wishlist as:';
+    emptyEl.appendChild(label);
+
+    const btnRow = document.createElement("div");
+    btnRow.className = "addBtnRow";
+    WISH_TYPES.forEach((t) => {
+      const btn = document.createElement("button");
+      btn.className = "addTypeBtn " + t.tagClass;
+      btn.textContent = t.label;
+      btn.addEventListener("click", () => {
+        addToWishlistLocal(query, t.key);
+        document.getElementById("q").value = "";
+        render();
+      });
+      btnRow.appendChild(btn);
     });
-    emptyEl.appendChild(addBtn);
+    emptyEl.appendChild(btnRow);
     return;
   }
 
