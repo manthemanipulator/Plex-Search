@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Plex Search</title>
+<title>Media Search</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
@@ -32,10 +32,14 @@
     --btn-bg: #222222;
     --btn-fg: #cccccc;
     --btn-active: #333333;
+    --chip-active-bg: #3a3a3a;
+    --chip-active-fg: #ffffff;
     --tag-tv-bg: #2a4d69;
     --tag-tv-fg: #bbccdd;
     --tag-movie-bg: #4d2a2a;
     --tag-movie-fg: #ddbbcc;
+    --tag-book-bg: #2a4d3a;
+    --tag-book-fg: #bbddc7;
     --tag-wish-bg: #4d472a;
     --tag-wish-fg: #dddccc;
     --remove-border: #555555;
@@ -43,6 +47,9 @@
     --add-bg: #2a6b4d;
     --add-bg-active: #1f5038;
     --add-fg: #ffffff;
+    --open-bg: #2a4d69;
+    --open-bg-active: #1e3a52;
+    --open-fg: #ffffff;
     --dot-ok: #33aa33;
     --dot-bad: #aa3333;
     --dot-neutral: #666666;
@@ -62,10 +69,14 @@
       --btn-bg: #ececec;
       --btn-fg: #333333;
       --btn-active: #dddddd;
+      --chip-active-bg: #333333;
+      --chip-active-fg: #ffffff;
       --tag-tv-bg: #dbeafe;
       --tag-tv-fg: #1e4d8c;
       --tag-movie-bg: #fde2e2;
       --tag-movie-fg: #9b2c2c;
+      --tag-book-bg: #dcf5e3;
+      --tag-book-fg: #1f6b3f;
       --tag-wish-bg: #fef3c7;
       --tag-wish-fg: #8a6a10;
       --remove-border: #cccccc;
@@ -73,6 +84,9 @@
       --add-bg: #2f855a;
       --add-bg-active: #276749;
       --add-fg: #ffffff;
+      --open-bg: #2a5d8c;
+      --open-bg-active: #1e4a70;
+      --open-fg: #ffffff;
       --dot-ok: #2f855a;
       --dot-bad: #c53030;
       --dot-neutral: #999999;
@@ -120,7 +134,7 @@
 
   /* Two small labeled dots replace the old always-visible status text -
      one for whether the app itself is syncing OK, one for whether the
-     library data pulled from the NAS is fresh. Tap the hamburger for
+     library data pulled in (either side) is fresh. Tap the hamburger for
      the actual timestamps behind them. */
   .statusItem {
     display: inline-flex;
@@ -173,7 +187,7 @@
   }
   #detailsPanel.hidden { display: none; }
   #detailsPanel #status { color: var(--muted); font-weight: 600; }
-  #libraryUpdated.stale { color: var(--stale-fg); font-weight: 600; }
+  #libraryUpdated.stale, #audiobookUpdated.stale { color: var(--stale-fg); font-weight: 600; }
   #appBuild {
     margin-top: 4px;
     padding-top: 8px;
@@ -189,6 +203,30 @@
     background: var(--input-bg);
     color: var(--fg);
   }
+
+  /* Filter chips: which library(s) results come from. Only meaningful in
+     search mode - hidden while browsing the wishlist, since that's
+     already its own combined, untyped list. */
+  #filterRow {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  #filterRow.hidden { display: none; }
+  .filterChip {
+    background: var(--btn-bg);
+    color: var(--btn-fg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 13px;
+  }
+  .filterChip.active {
+    background: var(--chip-active-bg);
+    color: var(--chip-active-fg);
+    border-color: var(--chip-active-bg);
+  }
+
   #modeRow {
     display: flex;
     align-items: center;
@@ -216,11 +254,18 @@
     background: var(--card-bg);
     border: 1px solid var(--border);
     display: flex;
-    align-items: center;
     flex-wrap: wrap;
+    align-items: center;
     gap: 6px;
   }
-  .result span:first-child { flex: 1; min-width: 0; }
+  .result .resultMain { flex: 1; min-width: 0; }
+  .result .resultTitle { display: block; }
+  .result .resultSub {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
   .tag {
     display: inline-block;
     font-size: 11px;
@@ -230,6 +275,7 @@
   }
   .tv { background: var(--tag-tv-bg); color: var(--tag-tv-fg); }
   .movie { background: var(--tag-movie-bg); color: var(--tag-movie-fg); }
+  .book { background: var(--tag-book-bg); color: var(--tag-book-fg); }
   .wish { background: var(--tag-wish-bg); color: var(--tag-wish-fg); }
 
   .removeBtn {
@@ -240,6 +286,15 @@
     padding: 3px 8px;
     font-size: 11px;
   }
+  .openBtn {
+    background: var(--open-bg);
+    color: var(--open-fg);
+    border: none;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  .openBtn:active { background: var(--open-bg-active); }
 
   #empty { color: var(--muted); margin-top: 16px; }
   .addBtn {
@@ -259,7 +314,7 @@
 <body>
   <div id="headerWrap">
     <div id="topBar">
-      <h1>Plex Search</h1>
+      <h1>Media Search</h1>
       <div id="topControls">
         <span class="statusItem" title="App sync status">App <span class="statusDot neutral" id="appSyncDot"></span></span>
         <span class="statusItem" title="Library data status">Library <span class="statusDot neutral" id="librarySyncDot"></span></span>
@@ -270,12 +325,18 @@
     <div id="detailsPanel" class="hidden">
       <div id="status">Loading...</div>
       <div id="lastSync">App never synced yet</div>
-      <div id="libraryUpdated">Library data from: unknown</div>
+      <div id="libraryUpdated">Movies/TV data from: unknown</div>
+      <div id="audiobookUpdated">Audiobook data from: unknown</div>
       <div id="appBuild">Checking app version...</div>
     </div>
   </div>
 
-  <input id="q" type="text" placeholder="Search movies &amp; TV shows..." autofocus autocomplete="off">
+  <input id="q" type="text" placeholder="Search movies, TV & audiobooks..." autofocus autocomplete="off">
+  <div id="filterRow">
+    <button class="filterChip active" type="button" data-filter="all">All</button>
+    <button class="filterChip" type="button" data-filter="video">Movies &amp; TV</button>
+    <button class="filterChip" type="button" data-filter="audiobook">Audiobooks</button>
+  </div>
   <div id="modeRow">
     <div id="count"></div>
     <button id="modeToggle" type="button">View Wishlist</button>
