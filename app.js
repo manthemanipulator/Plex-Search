@@ -1,5 +1,6 @@
 // =====================================================================
-// Plex Search PWA - app logic
+// Media Search PWA - app logic
+// (was "Plex Search" - now also searches your Audiobookshelf library)
 //
 // Fill in CONFIG below after you've deployed the Apps Script backend.
 // =====================================================================
@@ -12,24 +13,34 @@ const CONFIG = {
   // getStoredSecret/ensureSecret). This file is served as-is to anyone
   // who visits the site, public repo or not, so anything that actually
   // grants access can't live here.
-  API_URL: "https://script.google.com/macros/s/AKfycby66-WJTUbG_Q2rWJLiMgUanH1uQKo7oB3G78HZw1PHbNkoc_-ankCkr7FldRkfWX7n/exec"
+  API_URL: "https://script.google.com/macros/s/AKfycby66-WJTUbG_Q2rWJLiMgUanH1uQKo7oB3G78HZw1PHbNkoc_-ankCkr7FldRkfWX7n/exec",
+
+  // Base URL of your Audiobookshelf server, no trailing slash - used to
+  // build "Open in Audiobookshelf" links on audiobook results, e.g.
+  // "http://192.168.1.50:13378" on home wifi, or your Tailscale address
+  // once that's set up. This is just a link destination, not a secret -
+  // fine to leave as a plain constant same as API_URL above.
+  ABS_URL: "PASTE_YOUR_AUDIOBOOKSHELF_URL_HERE"
 };
 
 const STORAGE_KEYS = {
   inventory: "plex.inventory",
+  audiobooks: "plex.audiobooks",
   wishlist: "plex.wishlist",
   pendingQueue: "plex.pendingQueue",
   lastSync: "plex.lastSync",
   librarySyncTime: "plex.librarySyncTime",
+  audiobookSyncTime: "plex.audiobookSyncTime",
   apiSecret: "plex.apiSecret"
 };
 
-// How stale the NAS->Sheet library data can get before the UI flags it as
+// How stale either side's sync data can get before the UI flags it as
 // suspicious rather than just informational.
 const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000; // 2 days
 
 let state = {
   inventory: [],
+  audiobooks: [],
   wishlist: [],
   pendingQueue: [],
   // When THIS APP last successfully talked to the Apps Script API - proves
@@ -40,11 +51,15 @@ let state = {
   // syncTime field). If your NAS pipeline breaks, this timestamp freezes
   // even while `lastSync` above keeps updating every time you open the
   // app - that's the distinction that actually matters.
-  librarySyncTime: null
+  librarySyncTime: null,
+  // Same idea, for the Audiobooks sheet - set whenever the Mac Mini
+  // export script last successfully pushed data in.
+  audiobookSyncTime: null
 };
 
 let isSyncing = false;
 let mode = "search"; // "search" (type to find something) or "wishlist" (browse everything on it)
+let typeFilter = "all"; // "all" | "video" | "audiobook" - only applies in search mode
 
 // Tracks whether the most recent real sync attempt (not just an early
 // return for being offline/unconfigured) actually succeeded. Drives the
@@ -58,32 +73,37 @@ let lastSyncOk = null;
 function loadLocalData() {
   try {
     state.inventory = JSON.parse(localStorage.getItem(STORAGE_KEYS.inventory) || "[]");
+    state.audiobooks = JSON.parse(localStorage.getItem(STORAGE_KEYS.audiobooks) || "[]");
     state.wishlist = JSON.parse(localStorage.getItem(STORAGE_KEYS.wishlist) || "[]");
     state.pendingQueue = JSON.parse(localStorage.getItem(STORAGE_KEYS.pendingQueue) || "[]");
     state.lastSync = localStorage.getItem(STORAGE_KEYS.lastSync) || null;
     state.librarySyncTime = localStorage.getItem(STORAGE_KEYS.librarySyncTime) || null;
+    state.audiobookSyncTime = localStorage.getItem(STORAGE_KEYS.audiobookSyncTime) || null;
   } catch (err) {
     console.error("Failed to load cached data, starting fresh.", err);
-    state = { inventory: [], wishlist: [], pendingQueue: [], lastSync: null, librarySyncTime: null };
+    state = { inventory: [], audiobooks: [], wishlist: [], pendingQueue: [], lastSync: null, librarySyncTime: null, audiobookSyncTime: null };
   }
 }
 
 function saveLocalData() {
   localStorage.setItem(STORAGE_KEYS.inventory, JSON.stringify(state.inventory));
+  localStorage.setItem(STORAGE_KEYS.audiobooks, JSON.stringify(state.audiobooks));
   localStorage.setItem(STORAGE_KEYS.wishlist, JSON.stringify(state.wishlist));
   localStorage.setItem(STORAGE_KEYS.pendingQueue, JSON.stringify(state.pendingQueue));
   if (state.lastSync) localStorage.setItem(STORAGE_KEYS.lastSync, state.lastSync);
   if (state.librarySyncTime) localStorage.setItem(STORAGE_KEYS.librarySyncTime, state.librarySyncTime);
+  if (state.audiobookSyncTime) localStorage.setItem(STORAGE_KEYS.audiobookSyncTime, state.audiobookSyncTime);
 }
 
-// A library sync timestamp older than STALE_THRESHOLD_MS gets flagged in
-// the UI. Parsing is defensive - if the value isn't a recognizable date
-// (format varies slightly depending on whether Sheets auto-converted the
-// CSV's timestamp string to a real Date cell), we just skip the flag
-// rather than show something wrong.
-function isLibraryDataStale() {
-  if (!state.librarySyncTime) return false;
-  const parsed = new Date(state.librarySyncTime);
+// A sync timestamp older than STALE_THRESHOLD_MS gets flagged in the UI.
+// Parsing is defensive - if the value isn't a recognizable date (format
+// varies slightly depending on whether Sheets auto-converted a CSV
+// timestamp string to a real Date cell), we just skip the flag rather
+// than show something wrong. Shared by both the movies/TV and audiobook
+// timestamps.
+function isTimestampStale(value) {
+  if (!value) return false;
+  const parsed = new Date(value);
   if (isNaN(parsed.getTime())) return false;
   return Date.now() - parsed.getTime() > STALE_THRESHOLD_MS;
 }
@@ -93,13 +113,20 @@ function isLibraryDataStale() {
 // runs entirely client-side so it works with zero connectivity.
 // ---------------------------------------------------------------------
 
-function isMatch(title, query) {
-  if (!title) return false;
-  const cleanTitle = title.toString().toLowerCase().replace(/[^\w\s]/g, "");
+function isMatch(searchableText, query) {
+  if (!searchableText) return false;
+  const cleanText = searchableText.toString().toLowerCase().replace(/[^\w\s]/g, "");
   const cleanQuery = query.toLowerCase().replace(/[^\w\s]/g, "");
   const words = cleanQuery.split(/\s+/).filter(Boolean);
   if (words.length === 0) return false;
-  return words.every((w) => cleanTitle.includes(w));
+  return words.every((w) => cleanText.includes(w));
+}
+
+// Audiobooks match on title, author, narrator, and series together - so
+// searching "Sanderson" finds his books even when the title itself
+// doesn't contain it, same way you'd search Audiobookshelf itself.
+function audiobookSearchable(item) {
+  return [item.title, item.author, item.narrator, item.series].filter(Boolean).join(" ");
 }
 
 function isInWishlist(title) {
@@ -149,8 +176,8 @@ function ensureSecret() {
   let secret = getStoredSecret();
   if (secret) return secret;
   secret = window.prompt(
-    "Enter your Plex Search API secret (the value you set via " +
-    "'Set API Secret' in the Google Sheet's Plex Tools menu):"
+    "Enter your Media Search API secret (the value you set via " +
+    "'Set API Secret' in the Google Sheet's Media Tools menu):"
   );
   if (secret) {
     secret = secret.trim();
@@ -247,7 +274,7 @@ async function syncNow() {
       saveLocalData();
     }
 
-    // Pull the freshest inventory/wishlist now that our writes landed.
+    // Pull the freshest inventory/audiobooks/wishlist now that our writes landed.
     const fresh = await fetchLatestData(secret);
     if (!fresh.ok && fresh.error) {
       lastSyncOk = false;
@@ -261,11 +288,14 @@ async function syncNow() {
       return;
     }
     state.inventory = fresh.inventory || [];
+    state.audiobooks = fresh.audiobooks || [];
     state.wishlist = fresh.wishlist || [];
-    // fresh.syncTime comes from the Sheet's own "Last Synced" column (set
-    // by your NAS script), NOT from this fetch happening successfully -
-    // it only advances when the NAS pipeline actually writes new data.
+    // fresh.syncTime / fresh.audiobookSyncTime come from each sheet's own
+    // "last synced" column, NOT from this fetch happening successfully -
+    // they only advance when the respective source pipeline (NAS CSV,
+    // Mac Mini push) actually wrote new data.
     if (fresh.syncTime) state.librarySyncTime = fresh.syncTime;
+    if (fresh.audiobookSyncTime) state.audiobookSyncTime = fresh.audiobookSyncTime;
     state.lastSync = new Date().toLocaleString();
     lastSyncOk = true;
     saveLocalData();
@@ -296,9 +326,17 @@ function setStatus(text) {
   const libraryEl = document.getElementById("libraryUpdated");
   if (libraryEl) {
     libraryEl.textContent = state.librarySyncTime
-      ? "Library data from: " + state.librarySyncTime
-      : "Library data from: unknown";
-    libraryEl.className = isLibraryDataStale() ? "stale" : "";
+      ? "Movies/TV data from: " + state.librarySyncTime
+      : "Movies/TV data from: unknown";
+    libraryEl.className = isTimestampStale(state.librarySyncTime) ? "stale" : "";
+  }
+
+  const audiobookEl = document.getElementById("audiobookUpdated");
+  if (audiobookEl) {
+    audiobookEl.textContent = state.audiobookSyncTime
+      ? "Audiobook data from: " + state.audiobookSyncTime
+      : "Audiobook data from: unknown";
+    audiobookEl.className = isTimestampStale(state.audiobookSyncTime) ? "stale" : "";
   }
 
   updateStatusDots();
@@ -306,8 +344,8 @@ function setStatus(text) {
 
 // Two dots replace the old wall of status text: one for whether the app
 // itself is syncing OK (accounts for being offline too), one for whether
-// the library data pulled from the NAS is still fresh. Full detail lives
-// in the dropdown panel behind the hamburger button.
+// EITHER side's library data is stale/missing. Full detail lives in the
+// dropdown panel behind the hamburger button.
 function updateStatusDots() {
   const appDot = document.getElementById("appSyncDot");
   if (appDot) {
@@ -324,8 +362,9 @@ function updateStatusDots() {
 
   const libraryDot = document.getElementById("librarySyncDot");
   if (libraryDot) {
-    const cls = (!state.librarySyncTime || isLibraryDataStale()) ? "bad" : "ok";
-    libraryDot.className = "statusDot " + cls;
+    const bad = !state.librarySyncTime || isTimestampStale(state.librarySyncTime) ||
+                !state.audiobookSyncTime || isTimestampStale(state.audiobookSyncTime);
+    libraryDot.className = "statusDot " + (bad ? "bad" : "ok");
   }
 }
 
@@ -404,15 +443,23 @@ function refreshAppBuildLine() {
   });
 }
 
+function formatDuration(seconds) {
+  seconds = Math.round(Number(seconds) || 0);
+  if (!seconds) return "";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  if (h && m) return h + "h " + m + "m";
+  if (h) return h + "h";
+  return m + "m";
+}
+
 function renderCounts() {
   const countEl = document.getElementById("count");
   if (countEl) {
-    // Movies vs TV shows, not a combined total - matches the original
-    // design. The wishlist count isn't repeated here since it's already
-    // shown on the "View Wishlist" button right next to this.
     const movieCount = state.inventory.filter((item) => item.type !== "TV Show").length;
     const tvCount = state.inventory.length - movieCount;
-    countEl.textContent = movieCount + " movies, " + tvCount + " TV shows";
+    const bookCount = state.audiobooks.length;
+    countEl.textContent = movieCount + " movies, " + tvCount + " TV, " + bookCount + " audiobooks";
   }
   const toggleBtn = document.getElementById("modeToggle");
   if (toggleBtn) {
@@ -423,28 +470,59 @@ function renderCounts() {
 function toggleMode() {
   mode = mode === "search" ? "wishlist" : "search";
   const input = document.getElementById("q");
-  input.placeholder = mode === "wishlist" ? "Filter wishlist (optional)..." : "Search movies & TV shows...";
+  const filterRow = document.getElementById("filterRow");
+  input.placeholder = mode === "wishlist" ? "Filter wishlist (optional)..." : "Search movies, TV & audiobooks...";
+  if (filterRow) filterRow.classList.toggle("hidden", mode === "wishlist");
   render();
 }
 
-function makeResultRow(text, tagClass, tagText, wishlistTitle) {
+function setTypeFilter(value) {
+  typeFilter = value;
+  document.querySelectorAll(".filterChip").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.filter === value);
+  });
+  render();
+}
+
+function makeResultRow(opts) {
+  // opts: { title, sub, tagClass, tagText, wishlistTitle, openUrl }
   const div = document.createElement("div");
   div.className = "result";
 
-  const textEl = document.createElement("span");
-  textEl.textContent = text;
-  div.appendChild(textEl);
+  const main = document.createElement("div");
+  main.className = "resultMain";
+  const titleEl = document.createElement("span");
+  titleEl.className = "resultTitle";
+  titleEl.textContent = opts.title;
+  main.appendChild(titleEl);
+  if (opts.sub) {
+    const subEl = document.createElement("span");
+    subEl.className = "resultSub";
+    subEl.textContent = opts.sub;
+    main.appendChild(subEl);
+  }
+  div.appendChild(main);
 
   const tag = document.createElement("span");
-  tag.className = "tag " + tagClass;
-  tag.textContent = tagText;
+  tag.className = "tag " + opts.tagClass;
+  tag.textContent = opts.tagText;
   div.appendChild(tag);
 
-  if (wishlistTitle) {
+  if (opts.openUrl) {
+    const openBtn = document.createElement("a");
+    openBtn.className = "openBtn";
+    openBtn.textContent = "Open";
+    openBtn.href = opts.openUrl;
+    openBtn.target = "_blank";
+    openBtn.rel = "noopener";
+    div.appendChild(openBtn);
+  }
+
+  if (opts.wishlistTitle) {
     const removeBtn = document.createElement("button");
     removeBtn.className = "removeBtn";
     removeBtn.textContent = "Remove";
-    removeBtn.addEventListener("click", () => removeFromWishlistLocal(wishlistTitle));
+    removeBtn.addEventListener("click", () => removeFromWishlistLocal(opts.wishlistTitle));
     div.appendChild(removeBtn);
   }
 
@@ -468,7 +546,8 @@ function render() {
 
 // Browse (and optionally filter) everything currently on the wishlist,
 // with a Remove button on each row - this is the "what did I already add?"
-// view, independent of the search box.
+// view, independent of the search box. Not affected by the movies/TV vs
+// audiobooks filter chips, since wishlist entries aren't typed.
 function renderWishlistMode(query, resultsEl, emptyEl) {
   const items = state.wishlist
     .filter((title) => !query || isMatch(title, query))
@@ -488,14 +567,20 @@ function renderWishlistMode(query, resultsEl, emptyEl) {
   emptyEl.style.display = "none";
   items.forEach((title) => {
     const pending = isPending(title);
-    const row = makeResultRow(title + (pending ? " (pending sync)" : ""), "wish", "Wishlist", title);
+    const row = makeResultRow({
+      title: title + (pending ? " (pending sync)" : ""),
+      tagClass: "wish",
+      tagText: "Wishlist",
+      wishlistTitle: title
+    });
     resultsEl.appendChild(row);
   });
 }
 
-// Type-to-search against both your library and wishlist - the original
-// behavior: a checkmark-style tag if you already have it, or a button to
-// add it to the wishlist if nothing matched at all.
+// Type-to-search against your library (movies/TV + audiobooks, per the
+// active filter chip) and the wishlist - a checkmark-style tag if you
+// already have it, or a button to add it to the wishlist if nothing
+// matched at all.
 function renderSearchMode(query, resultsEl, emptyEl) {
   if (!query) {
     emptyEl.style.display = "none";
@@ -504,22 +589,51 @@ function renderSearchMode(query, resultsEl, emptyEl) {
 
   const matches = [];
 
-  state.inventory.forEach((item) => {
-    if (isMatch(item.title, query)) {
-      matches.push({
-        text: item.title + (item.year ? " (" + item.year + ")" : ""),
-        tagClass: item.type === "TV Show" ? "tv" : "movie",
-        tagText: item.type === "TV Show" ? "TV" : "Movie",
-        wishlistTitle: null
-      });
-    }
-  });
+  if (typeFilter !== "audiobook") {
+    state.inventory.forEach((item) => {
+      if (isMatch(item.title, query)) {
+        matches.push({
+          title: item.title + (item.year ? " (" + item.year + ")" : ""),
+          tagClass: item.type === "TV Show" ? "tv" : "movie",
+          tagText: item.type === "TV Show" ? "TV" : "Movie",
+          wishlistTitle: null
+        });
+      }
+    });
+  }
+
+  if (typeFilter !== "video") {
+    state.audiobooks.forEach((item) => {
+      if (isMatch(audiobookSearchable(item), query)) {
+        const subParts = [];
+        if (item.author) subParts.push(item.author);
+        if (item.series) subParts.push(item.series + (item.seriesNum ? " #" + item.seriesNum : ""));
+        if (item.narrator) subParts.push("narr. " + item.narrator);
+        const dur = formatDuration(item.durationSec);
+        if (dur) subParts.push(dur);
+
+        let openUrl = null;
+        if (item.absId && CONFIG.ABS_URL && CONFIG.ABS_URL.indexOf("PASTE_YOUR") !== 0) {
+          openUrl = CONFIG.ABS_URL.replace(/\/$/, "") + "/item/" + encodeURIComponent(item.absId);
+        }
+
+        matches.push({
+          title: item.title,
+          sub: subParts.join(" · "),
+          tagClass: "book",
+          tagText: "Audiobook",
+          wishlistTitle: null,
+          openUrl: openUrl
+        });
+      }
+    });
+  }
 
   state.wishlist.forEach((title) => {
     if (isMatch(title, query)) {
       const pending = isPending(title);
       matches.push({
-        text: title + (pending ? " (pending sync)" : ""),
+        title: title + (pending ? " (pending sync)" : ""),
         tagClass: "wish",
         tagText: "Wishlist",
         wishlistTitle: title
@@ -547,7 +661,7 @@ function renderSearchMode(query, resultsEl, emptyEl) {
 
   emptyEl.style.display = "none";
   matches.forEach((m) => {
-    resultsEl.appendChild(makeResultRow(m.text, m.tagClass, m.tagText, m.wishlistTitle));
+    resultsEl.appendChild(makeResultRow(m));
   });
 }
 
@@ -563,6 +677,9 @@ function init() {
   document.getElementById("q").addEventListener("input", render);
   document.getElementById("syncBtn").addEventListener("click", syncNow);
   document.getElementById("modeToggle").addEventListener("click", toggleMode);
+  document.querySelectorAll(".filterChip").forEach((btn) => {
+    btn.addEventListener("click", () => setTypeFilter(btn.dataset.filter));
+  });
 
   const menuBtn = document.getElementById("menuBtn");
   menuBtn.addEventListener("click", (e) => {
