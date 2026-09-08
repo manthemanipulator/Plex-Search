@@ -5,12 +5,20 @@
 // This project is a JSON API for the PWA front end (hosted on GitHub
 // Pages). It owns pulling BOTH library data sources in:
 //
-//   - Movies/TV ("Inventory" sheet): the CSV your NAS drops in Google
-//     Drive gets imported on a schedule, same as before - untouched.
+//   - Movies/TV ("Inventory" sheet): either the CSV your NAS drops in
+//     Google Drive gets imported on a schedule (the original path, still
+//     supported), OR a script on the Mac Mini talks to Plex's own API
+//     directly and POSTs straight here via "syncInventory" - same idea as
+//     Audiobooks below. Both write the same 4 columns, so it's safe to run
+//     either (or both, temporarily, while proving the new one out).
 //   - Audiobooks ("Audiobooks" sheet): pushed directly by a script on
 //     the Mac Mini that talks to Audiobookshelf's own API and POSTs the
 //     result straight to this Web App - no CSV/Drive hop needed, since
 //     the Mac Mini can reach the internet directly.
+//   - Organize Log ("Organize Log" sheet): a mirror of
+//     organize_audiobooks.py's own organize_log.csv, pushed by a separate
+//     small script on the Mac Mini - reference only, the PWA never reads
+//     this sheet or gets it back from getData.
 //
 // Both reading (library/wishlist) and writing (add/remove) require the
 // shared secret set below - doGet on its own returns nothing, so simply
@@ -38,8 +46,23 @@
 // =====================================================================
 
 var AUDIOBOOK_SHEET_NAME = 'Audiobooks';
+
+// Mirrors organize_audiobooks.py's organize_log.csv (on the Mac Mini) into
+// its own tab, purely so it's all in one place to look at - the PWA never
+// reads this sheet, it's not part of getOfflineData() at all.
+var ORGANIZE_LOG_SHEET_NAME = 'Organize Log';
+var ORGANIZE_LOG_HEADERS = ['timestamp', 'mode', 'status', 'author', 'series', 'series_num',
+                             'title', 'narrator', 'num_files', 'size', 'duration',
+                             'source_dir', 'dest_path', 'error'];
 var AUDIOBOOK_HEADERS = ['Title', 'Author', 'Narrator', 'Series', 'SeriesNum',
                           'DurationSec', 'SizeBytes', 'AbsId', 'LastSynced'];
+
+// Matches plex_library_export.csv's existing header row exactly (the old
+// Drive/CSV import writes these same 4 columns via updatePlexSheet() below,
+// just as a raw CSV dump rather than through this constant) - never
+// reorder without also updating syncInventoryFromPush_ and getOfflineData's
+// inventory-reading loop (which reads Title/Year/Type by fixed index).
+var INVENTORY_HEADERS = ['Title', 'Year', 'Last Synced', 'Type'];
 
 // 1. Menu, so you don't have to open the script editor to sync
 function onOpen() {
@@ -323,6 +346,99 @@ function syncAudiobooksFromPush_(audiobooks) {
   return { ok: true, count: rows.length };
 }
 
+// Creates the Organize Log sheet with headers if it doesn't exist yet -
+// same lazy-setup approach as getOrCreateAudiobookSheet_ above.
+function getOrCreateOrganizeLogSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(ORGANIZE_LOG_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(ORGANIZE_LOG_SHEET_NAME);
+    sheet.getRange(1, 1, 1, ORGANIZE_LOG_HEADERS.length).setValues([ORGANIZE_LOG_HEADERS]);
+  }
+  return sheet;
+}
+
+// Overwrite the Organize Log sheet from a direct push (a small script on
+// the Mac Mini reads organize_log.csv - organize_audiobooks.py's own
+// append-only change log - and POSTs its rows here via doPost's
+// "syncOrganizeLog" action). organize_log.csv only ever grows, so this is
+// always "resend everything" rather than an incremental append - same
+// shrink-guard safety check as the other two syncs, so a partial/failed
+// read on the Mac Mini can't blow away a good log with a short one.
+function syncOrganizeLogFromPush_(rows) {
+  var sheet = getOrCreateOrganizeLogSheet_();
+  var currentRowCount = Math.max(sheet.getLastRow() - 1, 0);
+  var newRowCount = rows.length;
+
+  if (currentRowCount > 10 && newRowCount < currentRowCount / 2) {
+    var msg = "Refused to update Organize Log: push has " + newRowCount +
+        " rows vs " + currentRowCount + " currently in the sheet - looks like a bad read, skipping.";
+    Logger.log(msg);
+    return { ok: false, error: msg };
+  }
+  if (newRowCount === 0 && currentRowCount > 0) {
+    var msg2 = "Refused to update Organize Log: push had 0 rows - leaving existing data untouched.";
+    Logger.log(msg2);
+    return { ok: false, error: msg2 };
+  }
+
+  var sheetRows = rows.map(function(r) {
+    return ORGANIZE_LOG_HEADERS.map(function(key) { return r[key] || ''; });
+  });
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, ORGANIZE_LOG_HEADERS.length).setValues([ORGANIZE_LOG_HEADERS]);
+  if (sheetRows.length > 0) {
+    sheet.getRange(2, 1, sheetRows.length, ORGANIZE_LOG_HEADERS.length).setValues(sheetRows);
+  }
+  Logger.log("Organize Log updated: " + sheetRows.length + " rows.");
+  return { ok: true, count: sheetRows.length };
+}
+
+// Overwrite the Inventory sheet from a direct push (a script on the Mac
+// Mini talks to Plex's own API and POSTs the result here via doPost's
+// "syncInventory" action) - an alternative to the CSV/Drive import above,
+// not a replacement for it yet. Same shrink-guard safety check as the
+// other two pushes. Takes [{title, year, type}, ...] - the timestamp is
+// stamped here with the Sheet's own clock (now), same as
+// syncAudiobooksFromPush_ does, rather than trusting whatever clock the
+// Mac Mini sent.
+function syncInventoryFromPush_(titles) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Inventory");
+  if (!sheet) {
+    var msg0 = "Refused to update Inventory: no sheet named 'Inventory' exists.";
+    Logger.log(msg0);
+    return { ok: false, error: msg0 };
+  }
+  var currentRowCount = Math.max(sheet.getLastRow() - 1, 0);
+  var newRowCount = titles.length;
+
+  if (currentRowCount > 10 && newRowCount < currentRowCount / 2) {
+    var msg = "Refused to update Inventory: push has " + newRowCount +
+        " rows vs " + currentRowCount + " currently in the sheet - looks like a bad sync, skipping.";
+    Logger.log(msg);
+    return { ok: false, error: msg };
+  }
+  if (newRowCount === 0 && currentRowCount > 0) {
+    var msg2 = "Refused to update Inventory: push had 0 rows - leaving existing data untouched.";
+    Logger.log(msg2);
+    return { ok: false, error: msg2 };
+  }
+
+  var now = new Date();
+  var rows = titles.map(function(t) {
+    return [t.title || '', t.year || '', now, t.type || 'Movie'];
+  });
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, INVENTORY_HEADERS.length).setValues([INVENTORY_HEADERS]);
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, INVENTORY_HEADERS.length).setValues(rows);
+  }
+  Logger.log("Inventory updated (direct push): " + rows.length + " titles.");
+  return { ok: true, count: rows.length };
+}
+
 // =====================================================================
 // 10. Web App entry points - JSON API for the PWA and the Mac Mini script
 // =====================================================================
@@ -340,6 +456,8 @@ function doGet(e) {
 //   { action: "add",    title: "Some Movie", type: "movie",  secret: "..." }
 //   { action: "remove", title: "Some Movie",                 secret: "..." }
 //   { action: "syncAudiobooks", audiobooks: [...],           secret: "..." }
+//   { action: "syncOrganizeLog", rows: [...],                secret: "..." }
+//   { action: "syncInventory", titles: [...],                secret: "..." }
 function doPost(e) {
   var body;
   try {
@@ -367,6 +485,20 @@ function doPost(e) {
       return jsonResponse_({ ok: false, error: "Missing or invalid 'audiobooks' array" });
     }
     return jsonResponse_(syncAudiobooksFromPush_(body.audiobooks));
+  }
+
+  if (body.action === 'syncOrganizeLog') {
+    if (!Array.isArray(body.rows)) {
+      return jsonResponse_({ ok: false, error: "Missing or invalid 'rows' array" });
+    }
+    return jsonResponse_(syncOrganizeLogFromPush_(body.rows));
+  }
+
+  if (body.action === 'syncInventory') {
+    if (!Array.isArray(body.titles)) {
+      return jsonResponse_({ ok: false, error: "Missing or invalid 'titles' array" });
+    }
+    return jsonResponse_(syncInventoryFromPush_(body.titles));
   }
 
   if (!body.title) {
@@ -399,8 +531,9 @@ function promptSetApiSecret() {
   var response = ui.prompt(
       'Set API Secret',
       'Enter a long random string (e.g. mash the keyboard, or use a password generator). ' +
-      'Paste this EXACT same string into the PWA\'s app.js as CONFIG.API_SECRET, and into ' +
-      'the Mac Mini\'s audiobookshelf_export.py environment.',
+      'Nothing to paste into app.js - the PWA will prompt for this the next time you tap ' +
+      'Sync Now and remember it in the browser. Do set this same value as APPS_SCRIPT_SECRET ' +
+      'in the Mac Mini\'s audiobookshelf_export.py environment.',
       ui.ButtonSet.OK_CANCEL);
   if (response.getSelectedButton() == ui.Button.OK) {
     var secret = response.getResponseText().trim();
@@ -409,7 +542,8 @@ function promptSetApiSecret() {
       return;
     }
     PropertiesService.getScriptProperties().setProperty('API_SECRET', secret);
-    ui.alert('API secret saved. Now paste the same value into app.js and the Mac Mini script.');
+    ui.alert('API secret saved. The PWA will prompt for it next time you tap Sync Now - just ' +
+             'set the same value as APPS_SCRIPT_SECRET for the Mac Mini export script.');
   }
 }
 
