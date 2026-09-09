@@ -614,6 +614,59 @@ function renderWishlistMode(query, resultsEl, emptyEl) {
   });
 }
 
+// Fills the space below the search box before you've typed anything -
+// previously just blank. Four big, tappable tiles: Movies/TV/Audiobooks
+// jump the filter chip and refocus the search box (a nudge toward typing,
+// since this app is search-only and doesn't browse full lists), Wishlist
+// jumps straight into wishlist mode, same as the header button.
+function renderIdleTiles(resultsEl) {
+  const movieCount = state.inventory.filter((item) => item.type !== "TV Show").length;
+  const tvCount = state.inventory.length - movieCount;
+  const bookCount = state.audiobooks.length;
+  const wishCount = state.wishlist.length;
+
+  const tiles = [
+    { num: movieCount, label: "Movies", filter: "video" },
+    { num: tvCount, label: "TV Shows", filter: "video" },
+    { num: bookCount, label: "Audiobooks", filter: "audiobook" },
+    { num: wishCount, label: "Wishlist", action: "wishlist" }
+  ];
+
+  const grid = document.createElement("div");
+  grid.className = "statGrid";
+  tiles.forEach((t) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "statCard";
+
+    const num = document.createElement("span");
+    num.className = "statNum";
+    num.textContent = t.num;
+    card.appendChild(num);
+
+    const label = document.createElement("span");
+    label.className = "statLabel";
+    label.textContent = t.label;
+    card.appendChild(label);
+
+    card.addEventListener("click", () => {
+      if (t.action === "wishlist") {
+        toggleMode();
+      } else {
+        setTypeFilter(t.filter);
+        document.getElementById("q").focus();
+      }
+    });
+    grid.appendChild(card);
+  });
+  resultsEl.appendChild(grid);
+
+  const hint = document.createElement("div");
+  hint.className = "idleHint";
+  hint.textContent = "Start typing above to search your library.";
+  resultsEl.appendChild(hint);
+}
+
 // Type-to-search against your library (movies/TV + audiobooks, per the
 // active filter chip) and the wishlist - a checkmark-style tag if you
 // already have it, or a button to add it to the wishlist if nothing
@@ -621,6 +674,7 @@ function renderWishlistMode(query, resultsEl, emptyEl) {
 function renderSearchMode(query, resultsEl, emptyEl) {
   if (!query) {
     emptyEl.style.display = "none";
+    renderIdleTiles(resultsEl);
     return;
   }
 

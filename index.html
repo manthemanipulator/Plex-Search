@@ -112,7 +112,7 @@
     background: var(--bg);
     color: var(--fg);
   }
-  h1 { font-size: 22px; font-weight: 700; margin: 0; line-height: 1.2; }
+  h1 { font-size: 24px; font-weight: 700; margin: 0; line-height: 1.2; }
 
   /* #headerWrap anchors the dropdown details panel so it can be
      absolutely positioned under the hamburger button without pushing
@@ -123,13 +123,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 10px;
   }
 
   #topControls {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
   }
 
   /* Two small labeled dots replace the old always-visible status text -
@@ -155,17 +156,30 @@
   .statusDot.bad { background: var(--dot-bad); }
   .statusDot.neutral { background: var(--dot-neutral); }
 
+  /* Every tappable control on this page targets a 44px minimum edge
+     (Apple's own HIG minimum) - the old versions of these were sized to
+     fit their text/icon with a few px of padding, which read as "tiny"
+     even though the text itself was legible. */
   #syncBtn, #menuBtn {
     background: var(--btn-bg);
     color: var(--btn-fg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 13px;
-    line-height: 1.4;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.2;
+    min-height: 44px;
   }
   #syncBtn:active, #menuBtn:active { background: var(--btn-active); }
-  #menuBtn { font-size: 15px; padding: 3px 9px; }
+  #menuBtn {
+    font-size: 18px;
+    padding: 10px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 
   #detailsPanel {
     position: absolute;
@@ -196,12 +210,13 @@
 
   input#q {
     width: 100%;
-    padding: 12px;
-    font-size: 16px;
-    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 17px;
+    border-radius: 10px;
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--fg);
+    min-height: 48px;
   }
 
   /* Filter chips: which library(s) results come from. Only meaningful in
@@ -210,7 +225,7 @@
   #filterRow {
     display: flex;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 12px;
   }
   #filterRow.hidden { display: none; }
   .filterChip {
@@ -218,8 +233,10 @@
     color: var(--btn-fg);
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 5px 12px;
-    font-size: 13px;
+    padding: 10px 16px;
+    font-size: 14px;
+    min-height: 40px;
+    flex: 1;
   }
   .filterChip.active {
     background: var(--chip-active-bg);
@@ -231,46 +248,50 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 8px;
+    margin-top: 14px;
     gap: 8px;
   }
-  #count { color: var(--muted); font-size: 13px; }
+  #count { color: var(--muted); font-size: 14px; }
   #modeToggle {
     background: var(--btn-bg);
     color: var(--btn-fg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
     white-space: nowrap;
     flex-shrink: 0;
+    min-height: 40px;
   }
   #modeToggle:active { background: var(--btn-active); }
 
   .result {
-    padding: 10px 12px;
-    margin-top: 8px;
-    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 10px;
+    border-radius: 10px;
     background: var(--card-bg);
     border: 1px solid var(--border);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    min-height: 44px;
   }
   .result .resultMain { flex: 1; min-width: 0; }
-  .result .resultTitle { display: block; }
+  .result .resultTitle { display: block; font-size: 15px; }
   .result .resultSub {
     display: block;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
-    margin-top: 2px;
+    margin-top: 3px;
   }
   .tag {
     display: inline-block;
     font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 4px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 5px;
     vertical-align: middle;
   }
   .tv { background: var(--tag-tv-bg); color: var(--tag-tv-fg); }
@@ -283,25 +304,30 @@
     background: none;
     border: 1px solid var(--remove-border);
     color: var(--remove-fg);
-    border-radius: 6px;
-    padding: 3px 8px;
-    font-size: 11px;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    min-height: 36px;
   }
   .openBtn {
     background: var(--open-bg);
     color: var(--open-fg);
     border: none;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
   }
   .openBtn:active { background: var(--open-bg-active); }
 
-  #empty { color: var(--muted); margin-top: 16px; }
+  #empty { color: var(--muted); margin-top: 20px; font-size: 15px; }
   .addPrompt {
     color: var(--muted);
-    font-size: 13px;
-    margin-top: 14px;
+    font-size: 14px;
+    margin-top: 16px;
   }
   /* Row of type buttons shown when adding a new wishlist item - reuses
      the exact same colors as the Movie/TV/Audiobook tags elsewhere so a
@@ -309,24 +335,62 @@
      category at a glance. */
   .addBtnRow {
     display: flex;
-    gap: 8px;
-    margin-top: 8px;
+    gap: 10px;
+    margin-top: 10px;
     flex-wrap: wrap;
   }
   .addTypeBtn {
     flex: 1 1 auto;
     min-width: 80px;
-    padding: 12px 8px;
-    font-size: 14px;
+    padding: 14px 8px;
+    font-size: 15px;
     font-weight: 600;
-    border-radius: 8px;
+    border-radius: 10px;
     border: none;
+    min-height: 48px;
   }
   .addTypeBtn:active { opacity: 0.8; }
   .addTypeBtn.movie { background: var(--tag-movie-bg); color: var(--tag-movie-fg); }
   .addTypeBtn.tv { background: var(--tag-tv-bg); color: var(--tag-tv-fg); }
   .addTypeBtn.book { background: var(--tag-book-bg); color: var(--tag-book-fg); }
   .addTypeBtn.otherType { background: var(--btn-bg); color: var(--btn-fg); border: 1px solid var(--border); }
+
+  /* Idle state (search mode, no query yet): the old page just left this
+     whole area blank until you typed something, which is most of what
+     read as "dead space" on a phone screen. These tiles fill it with
+     something actually useful (at-a-glance counts) and double as big,
+     easy-to-tap shortcuts - tapping Movies/TV/Audiobooks jumps the filter
+     chip and focuses the search box, tapping Wishlist opens it directly. */
+  .statGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 22px;
+  }
+  .statCard {
+    font-family: inherit;
+    cursor: pointer;
+    background: var(--card-bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 14px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    justify-content: center;
+    min-height: 88px;
+  }
+  .statCard:active { background: var(--btn-active); }
+  .statNum { font-size: 26px; font-weight: 700; }
+  .statLabel { font-size: 13px; color: var(--muted); }
+  .idleHint {
+    text-align: center;
+    color: var(--faint);
+    font-size: 13px;
+    margin-top: 18px;
+  }
 </style>
 </head>
 <body>
