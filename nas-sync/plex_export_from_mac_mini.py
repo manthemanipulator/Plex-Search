@@ -83,7 +83,13 @@ def plex_request(path, params=None):
     params["X-Plex-Token"] = PLEX_TOKEN
     url = PLEX_URL + path + "?" + urlencode(params)
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    # 90s, not 30s - fetching a full library section (all movies, or all
+    # shows) can genuinely take 20-30s depending on library size and
+    # whatever else Plex is doing at the moment (a metadata refresh, etc.).
+    # A tight timeout here isn't "faster," it's just a coin flip that
+    # occasionally loses - this runs unattended from cron, so there's no
+    # real cost to waiting longer for a request that's still in flight.
+    with urllib.request.urlopen(req, timeout=90) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
