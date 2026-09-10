@@ -132,6 +132,25 @@ function isTimestampStale(value) {
   return Date.now() - parsed.getTime() > STALE_THRESHOLD_MS;
 }
 
+// The Sheet hands back timestamps as a full JS Date().toString(), e.g.
+// "Wed Sep 09 2026 16:43:21 GMT-0700 (Pacific Daylight Time)" - technically
+// readable, but it's a lot of text for "when did this last update." This
+// shortens anything parseable down to "Sep 9, 4:43 PM" for display. Falls
+// back to the original string untouched if it isn't a recognizable date,
+// same defensive stance as isTimestampStale above - never hide data just
+// because it didn't parse.
+function formatTimestamp(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
 // ---------------------------------------------------------------------
 // Search matching - identical logic to the original Apps Script version,
 // runs entirely client-side so it works with zero connectivity.
@@ -325,7 +344,10 @@ async function syncNow() {
     // Mac Mini push) actually wrote new data.
     if (fresh.syncTime) state.librarySyncTime = fresh.syncTime;
     if (fresh.audiobookSyncTime) state.audiobookSyncTime = fresh.audiobookSyncTime;
-    state.lastSync = new Date().toLocaleString();
+    // Stored raw (not pre-formatted) so formatTimestamp() can shorten it
+    // for display the same way it shortens the two Sheet-provided
+    // timestamps above - one formatting path instead of two.
+    state.lastSync = new Date().toISOString();
     lastSyncOk = true;
     saveLocalData();
     render();
@@ -353,25 +375,24 @@ function setStatus(text) {
   const menuSyncStatusEl = document.getElementById("menuSyncStatus");
   if (menuSyncStatusEl) menuSyncStatusEl.textContent = text;
 
+  // Each row's label (in the markup) already says what the value is, so
+  // these just hold the (shortened) timestamp itself now - no more
+  // "Movies/TV data from: <full sentence>" repeated for every row.
   const lastSyncEl = document.getElementById("lastSync");
   if (lastSyncEl) {
-    lastSyncEl.textContent = state.lastSync ? "App synced: " + state.lastSync : "App never synced yet";
+    lastSyncEl.textContent = state.lastSync ? formatTimestamp(state.lastSync) : "Never";
   }
 
   const libraryEl = document.getElementById("libraryUpdated");
   if (libraryEl) {
-    libraryEl.textContent = state.librarySyncTime
-      ? "Movies/TV data from: " + state.librarySyncTime
-      : "Movies/TV data from: unknown";
-    libraryEl.className = isTimestampStale(state.librarySyncTime) ? "stale" : "";
+    libraryEl.textContent = state.librarySyncTime ? formatTimestamp(state.librarySyncTime) : "Unknown";
+    libraryEl.classList.toggle("stale", isTimestampStale(state.librarySyncTime));
   }
 
   const audiobookEl = document.getElementById("audiobookUpdated");
   if (audiobookEl) {
-    audiobookEl.textContent = state.audiobookSyncTime
-      ? "Audiobook data from: " + state.audiobookSyncTime
-      : "Audiobook data from: unknown";
-    audiobookEl.className = isTimestampStale(state.audiobookSyncTime) ? "stale" : "";
+    audiobookEl.textContent = state.audiobookSyncTime ? formatTimestamp(state.audiobookSyncTime) : "Unknown";
+    audiobookEl.classList.toggle("stale", isTimestampStale(state.audiobookSyncTime));
   }
 
   updateStatusDots();

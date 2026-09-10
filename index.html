@@ -217,10 +217,7 @@
   .menuItemSub { font-size: 12px; color: var(--muted); }
 
   #aboutPanel {
-    padding: 6px 16px 14px;
-    font-size: 12px;
-    line-height: 1.4;
-    color: var(--faint);
+    padding: 2px 16px 14px;
   }
   #aboutPanel.hidden { display: none; }
   #aboutBackBtn {
@@ -232,12 +229,36 @@
     padding: 10px 0;
     min-height: 36px;
   }
-  #status { color: var(--muted); font-weight: 600; margin-bottom: 2px; }
-  #libraryUpdated.stale, #audiobookUpdated.stale { color: var(--stale-fg); font-weight: 600; }
+
+  /* Label-above-value rows instead of the old "Movies/TV data from: <a
+     full JS Date().toString() dump>" sentences - short, right-sized text
+     that doesn't need you to parse a wall of GMT-offset timezone names to
+     find the actual date. formatTimestamp() (app.js) does the shortening;
+     this just lays out the result cleanly. */
+  .aboutRow {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .aboutRow:last-of-type { border-bottom: none; }
+  .aboutLabel {
+    display: block;
+    font-size: 11px;
+    color: var(--faint);
+    margin-bottom: 2px;
+  }
+  .aboutValue {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .aboutValue.stale { color: var(--stale-fg); }
   #appBuild {
-    margin-top: 4px;
-    padding-top: 8px;
+    margin-top: 8px;
+    padding-top: 10px;
     border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--faint);
   }
 
   input#q {
@@ -431,10 +452,22 @@
       </div>
       <div id="aboutPanel" class="hidden">
         <button id="aboutBackBtn" type="button">&larr; Back</button>
-        <div id="status">Loading...</div>
-        <div id="lastSync">App never synced yet</div>
-        <div id="libraryUpdated">Movies/TV data from: unknown</div>
-        <div id="audiobookUpdated">Audiobook data from: unknown</div>
+        <div class="aboutRow">
+          <span class="aboutLabel">Status</span>
+          <span class="aboutValue" id="status">Loading...</span>
+        </div>
+        <div class="aboutRow">
+          <span class="aboutLabel">App synced</span>
+          <span class="aboutValue" id="lastSync">Never</span>
+        </div>
+        <div class="aboutRow">
+          <span class="aboutLabel">Movies/TV data</span>
+          <span class="aboutValue" id="libraryUpdated">Unknown</span>
+        </div>
+        <div class="aboutRow">
+          <span class="aboutLabel">Audiobook data</span>
+          <span class="aboutValue" id="audiobookUpdated">Unknown</span>
+        </div>
         <div id="appBuild">Checking app version...</div>
       </div>
     </div>
