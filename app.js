@@ -347,6 +347,12 @@ function setStatus(text) {
   const el = document.getElementById("status");
   if (el) el.textContent = text;
 
+  // Mirrors the same text as a subtitle under the "Sync Now" menu row, so
+  // you can see it's working (or why it isn't) without having to drill
+  // into About.
+  const menuSyncStatusEl = document.getElementById("menuSyncStatus");
+  if (menuSyncStatusEl) menuSyncStatusEl.textContent = text;
+
   const lastSyncEl = document.getElementById("lastSync");
   if (lastSyncEl) {
     lastSyncEl.textContent = state.lastSync ? "App synced: " + state.lastSync : "App never synced yet";
@@ -397,13 +403,41 @@ function updateStatusDots() {
   }
 }
 
-function toggleDetailsPanel() {
-  const panel = document.getElementById("detailsPanel");
+// The hamburger opens #menuPanel showing three rows (Sync Now / Wishlist /
+// About). About swaps in a second "screen" (#aboutPanel) inside the same
+// popover rather than opening anything separate - showMenuListView/
+// showAboutView flip between the two, and the panel always resets to the
+// list view each time it's freshly opened.
+function showMenuListView() {
+  const list = document.getElementById("menuList");
+  const about = document.getElementById("aboutPanel");
+  if (list) list.classList.remove("hidden");
+  if (about) about.classList.add("hidden");
+}
+
+function showAboutView() {
+  const list = document.getElementById("menuList");
+  const about = document.getElementById("aboutPanel");
+  if (list) list.classList.add("hidden");
+  if (about) about.classList.remove("hidden");
+  refreshAppBuildLine(); // fresh read each time About is actually opened
+}
+
+function closeMenuPanel() {
+  const panel = document.getElementById("menuPanel");
+  const btn = document.getElementById("menuBtn");
+  if (!panel || !btn) return;
+  panel.classList.add("hidden");
+  btn.setAttribute("aria-expanded", "false");
+}
+
+function toggleMenuPanel() {
+  const panel = document.getElementById("menuPanel");
   const btn = document.getElementById("menuBtn");
   if (!panel || !btn) return;
   const nowHidden = panel.classList.toggle("hidden");
   btn.setAttribute("aria-expanded", String(!nowHidden));
-  if (!nowHidden) refreshAppBuildLine(); // just opened - get a fresh read each time
+  if (!nowHidden) showMenuListView(); // just opened - always start at the top-level list
 }
 
 // Asks whichever service worker is ACTUALLY controlling this page right
@@ -482,17 +516,22 @@ function formatDuration(seconds) {
   return m + "m";
 }
 
-function renderCounts() {
-  const countEl = document.getElementById("count");
-  if (countEl) {
-    const movieCount = state.inventory.filter((item) => item.type !== "TV Show").length;
-    const tvCount = state.inventory.length - movieCount;
-    const bookCount = state.audiobooks.length;
-    countEl.textContent = movieCount + " movies, " + tvCount + " TV Shows, " + bookCount + " audiobooks";
-  }
-  const toggleBtn = document.getElementById("modeToggle");
-  if (toggleBtn) {
-    toggleBtn.textContent = mode === "wishlist" ? "Back to Search" : "View Wishlist (" + state.wishlist.length + ")";
+// The old always-visible "830 movies, 33 TV Shows, 76 audiobooks" text
+// line is gone - it was redundant with the big stat tiles shown on the
+// idle search screen (see renderIdleTiles). All that's left to keep live
+// here is the Wishlist row inside the menu, which doubles as the mode
+// toggle (its label flips to "Back to Search" once you're in wishlist
+// mode, same behavior the old modeToggle button had).
+function updateMenuWishlistItem() {
+  const label = document.getElementById("menuWishlistLabel");
+  const sub = document.getElementById("menuWishlistCount");
+  if (!label || !sub) return;
+  if (mode === "wishlist") {
+    label.textContent = "Back to Search";
+    sub.textContent = "";
+  } else {
+    label.textContent = "Wishlist";
+    sub.textContent = state.wishlist.length + (state.wishlist.length === 1 ? " item" : " items");
   }
 }
 
@@ -564,7 +603,7 @@ function makeResultRow(opts) {
 }
 
 function render() {
-  renderCounts();
+  updateMenuWishlistItem();
   const query = document.getElementById("q").value.trim();
   const resultsEl = document.getElementById("results");
   const emptyEl = document.getElementById("empty");
@@ -780,23 +819,33 @@ function init() {
   setStatus(navigator.onLine ? "Ready" : "Offline");
 
   document.getElementById("q").addEventListener("input", render);
-  document.getElementById("syncBtn").addEventListener("click", syncNow);
-  document.getElementById("modeToggle").addEventListener("click", toggleMode);
   document.querySelectorAll(".filterChip").forEach((btn) => {
     btn.addEventListener("click", () => setTypeFilter(btn.dataset.filter));
   });
 
+  // Sync stays open afterward so you can watch "Syncing..." resolve into
+  // "Synced" (or an error) right there in the menu; Wishlist swaps the
+  // whole main screen so the menu closes to get out of the way; About
+  // swaps to the second "screen" inside the same popover instead of
+  // closing.
+  document.getElementById("menuSyncBtn").addEventListener("click", syncNow);
+  document.getElementById("menuWishlistBtn").addEventListener("click", () => {
+    toggleMode();
+    closeMenuPanel();
+  });
+  document.getElementById("menuAboutBtn").addEventListener("click", showAboutView);
+  document.getElementById("aboutBackBtn").addEventListener("click", showMenuListView);
+
   const menuBtn = document.getElementById("menuBtn");
   menuBtn.addEventListener("click", (e) => {
     e.stopPropagation(); // don't let this same click immediately re-trigger the outside-click-closes handler below
-    toggleDetailsPanel();
+    toggleMenuPanel();
   });
   document.addEventListener("click", (e) => {
-    const panel = document.getElementById("detailsPanel");
+    const panel = document.getElementById("menuPanel");
     if (!panel || panel.classList.contains("hidden")) return;
     if (panel.contains(e.target)) return; // clicks inside the panel shouldn't close it
-    panel.classList.add("hidden");
-    menuBtn.setAttribute("aria-expanded", "false");
+    closeMenuPanel();
   });
 
   window.addEventListener("online", () => {
