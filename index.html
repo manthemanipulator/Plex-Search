@@ -112,7 +112,7 @@
     background: var(--bg);
     color: var(--fg);
   }
-  h1 { font-size: 22px; font-weight: 700; margin: 0; line-height: 1.2; }
+  h1 { font-size: 24px; font-weight: 700; margin: 0; line-height: 1.2; }
 
   /* #headerWrap anchors the dropdown details panel so it can be
      absolutely positioned under the hamburger button without pushing
@@ -123,13 +123,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 10px;
   }
 
   #topControls {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
   }
 
   /* Two small labeled dots replace the old always-visible status text -
@@ -155,53 +156,120 @@
   .statusDot.bad { background: var(--dot-bad); }
   .statusDot.neutral { background: var(--dot-neutral); }
 
-  #syncBtn, #menuBtn {
+  /* Every tappable control on this page targets a 44px minimum edge
+     (Apple's own HIG minimum) - the old versions of these were sized to
+     fit their text/icon with a few px of padding, which read as "tiny"
+     even though the text itself was legible. */
+  #menuBtn {
     background: var(--btn-bg);
     color: var(--btn-fg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 13px;
-    line-height: 1.4;
+    border-radius: 8px;
+    font-size: 18px;
+    padding: 10px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
-  #syncBtn:active, #menuBtn:active { background: var(--btn-active); }
-  #menuBtn { font-size: 15px; padding: 3px 9px; }
+  #menuBtn:active { background: var(--btn-active); }
 
-  #detailsPanel {
+  /* The hamburger now opens an actual menu (Sync / Wishlist / About)
+     instead of a read-only status readout - #menuPanel holds that list;
+     #aboutPanel is a second "screen" inside the same dropdown, swapped in
+     when About is tapped, so the whole thing stays one small popover
+     instead of needing real navigation. */
+  #menuPanel {
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    min-width: 230px;
+    min-width: 220px;
     background: var(--card-bg);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
+    border-radius: 10px;
     box-shadow: 0 6px 18px var(--panel-shadow);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    font-size: 12px;
-    line-height: 1.3;
-    color: var(--faint);
+    overflow: hidden;
     z-index: 20;
   }
-  #detailsPanel.hidden { display: none; }
-  #detailsPanel #status { color: var(--muted); font-weight: 600; }
-  #libraryUpdated.stale, #audiobookUpdated.stale { color: var(--stale-fg); font-weight: 600; }
+  #menuPanel.hidden { display: none; }
+  #menuList.hidden { display: none; }
+
+  .menuItem {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg);
+    font-family: inherit;
+    padding: 13px 16px;
+    min-height: 48px;
+  }
+  .menuItem:last-child { border-bottom: none; }
+  .menuItem:active { background: var(--btn-active); }
+  .menuItemLabel { font-size: 15px; font-weight: 600; }
+  .menuItemSub { font-size: 12px; color: var(--muted); }
+
+  #aboutPanel {
+    padding: 2px 16px 14px;
+  }
+  #aboutPanel.hidden { display: none; }
+  #aboutBackBtn {
+    background: none;
+    border: none;
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 0;
+    min-height: 36px;
+  }
+
+  /* Label-above-value rows instead of the old "Movies/TV data from: <a
+     full JS Date().toString() dump>" sentences - short, right-sized text
+     that doesn't need you to parse a wall of GMT-offset timezone names to
+     find the actual date. formatTimestamp() (app.js) does the shortening;
+     this just lays out the result cleanly. */
+  .aboutRow {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .aboutRow:last-of-type { border-bottom: none; }
+  .aboutLabel {
+    display: block;
+    font-size: 11px;
+    color: var(--faint);
+    margin-bottom: 2px;
+  }
+  .aboutValue {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .aboutValue.stale { color: var(--stale-fg); }
   #appBuild {
-    margin-top: 4px;
-    padding-top: 8px;
+    margin-top: 8px;
+    padding-top: 10px;
     border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--faint);
   }
 
   input#q {
     width: 100%;
-    padding: 12px;
-    font-size: 16px;
-    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 17px;
+    border-radius: 10px;
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--fg);
+    min-height: 48px;
   }
 
   /* Filter chips: which library(s) results come from. Only meaningful in
@@ -210,7 +278,7 @@
   #filterRow {
     display: flex;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 12px;
   }
   #filterRow.hidden { display: none; }
   .filterChip {
@@ -218,8 +286,10 @@
     color: var(--btn-fg);
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 5px 12px;
-    font-size: 13px;
+    padding: 10px 16px;
+    font-size: 14px;
+    min-height: 40px;
+    flex: 1;
   }
   .filterChip.active {
     background: var(--chip-active-bg);
@@ -227,50 +297,34 @@
     border-color: var(--chip-active-bg);
   }
 
-  #modeRow {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 8px;
-    gap: 8px;
-  }
-  #count { color: var(--muted); font-size: 13px; }
-  #modeToggle {
-    background: var(--btn-bg);
-    color: var(--btn-fg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  #modeToggle:active { background: var(--btn-active); }
+  #results { margin-top: 6px; }
 
   .result {
-    padding: 10px 12px;
-    margin-top: 8px;
-    border-radius: 8px;
+    padding: 14px 16px;
+    margin-top: 10px;
+    border-radius: 10px;
     background: var(--card-bg);
     border: 1px solid var(--border);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    min-height: 44px;
   }
   .result .resultMain { flex: 1; min-width: 0; }
-  .result .resultTitle { display: block; }
+  .result .resultTitle { display: block; font-size: 15px; }
   .result .resultSub {
     display: block;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--muted);
-    margin-top: 2px;
+    margin-top: 3px;
   }
   .tag {
     display: inline-block;
     font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 4px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 5px;
     vertical-align: middle;
   }
   .tv { background: var(--tag-tv-bg); color: var(--tag-tv-fg); }
@@ -283,25 +337,30 @@
     background: none;
     border: 1px solid var(--remove-border);
     color: var(--remove-fg);
-    border-radius: 6px;
-    padding: 3px 8px;
-    font-size: 11px;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    min-height: 36px;
   }
   .openBtn {
     background: var(--open-bg);
     color: var(--open-fg);
     border: none;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
   }
   .openBtn:active { background: var(--open-bg-active); }
 
-  #empty { color: var(--muted); margin-top: 16px; }
+  #empty { color: var(--muted); margin-top: 20px; font-size: 15px; }
   .addPrompt {
     color: var(--muted);
-    font-size: 13px;
-    margin-top: 14px;
+    font-size: 14px;
+    margin-top: 16px;
   }
   /* Row of type buttons shown when adding a new wishlist item - reuses
      the exact same colors as the Movie/TV/Audiobook tags elsewhere so a
@@ -309,24 +368,62 @@
      category at a glance. */
   .addBtnRow {
     display: flex;
-    gap: 8px;
-    margin-top: 8px;
+    gap: 10px;
+    margin-top: 10px;
     flex-wrap: wrap;
   }
   .addTypeBtn {
     flex: 1 1 auto;
     min-width: 80px;
-    padding: 12px 8px;
-    font-size: 14px;
+    padding: 14px 8px;
+    font-size: 15px;
     font-weight: 600;
-    border-radius: 8px;
+    border-radius: 10px;
     border: none;
+    min-height: 48px;
   }
   .addTypeBtn:active { opacity: 0.8; }
   .addTypeBtn.movie { background: var(--tag-movie-bg); color: var(--tag-movie-fg); }
   .addTypeBtn.tv { background: var(--tag-tv-bg); color: var(--tag-tv-fg); }
   .addTypeBtn.book { background: var(--tag-book-bg); color: var(--tag-book-fg); }
   .addTypeBtn.otherType { background: var(--btn-bg); color: var(--btn-fg); border: 1px solid var(--border); }
+
+  /* Idle state (search mode, no query yet): the old page just left this
+     whole area blank until you typed something, which is most of what
+     read as "dead space" on a phone screen. These tiles fill it with
+     something actually useful (at-a-glance counts) and double as big,
+     easy-to-tap shortcuts - tapping Movies/TV/Audiobooks jumps the filter
+     chip and focuses the search box, tapping Wishlist opens it directly. */
+  .statGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 18px;
+  }
+  .statCard {
+    font-family: inherit;
+    cursor: pointer;
+    background: var(--card-bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 14px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    justify-content: center;
+    min-height: 88px;
+  }
+  .statCard:active { background: var(--btn-active); }
+  .statNum { font-size: 26px; font-weight: 700; }
+  .statLabel { font-size: 13px; color: var(--muted); }
+  .idleHint {
+    text-align: center;
+    color: var(--faint);
+    font-size: 13px;
+    margin-top: 18px;
+  }
 </style>
 </head>
 <body>
@@ -336,16 +433,43 @@
       <div id="topControls">
         <span class="statusItem" title="App sync status">App <span class="statusDot neutral" id="appSyncDot"></span></span>
         <span class="statusItem" title="Library data status">Library <span class="statusDot neutral" id="librarySyncDot"></span></span>
-        <button id="syncBtn" type="button">Sync Now</button>
-        <button id="menuBtn" type="button" aria-label="Sync details" aria-expanded="false">&#9776;</button>
+        <button id="menuBtn" type="button" aria-label="Menu" aria-expanded="false">&#9776;</button>
       </div>
     </div>
-    <div id="detailsPanel" class="hidden">
-      <div id="status">Loading...</div>
-      <div id="lastSync">App never synced yet</div>
-      <div id="libraryUpdated">Movies/TV data from: unknown</div>
-      <div id="audiobookUpdated">Audiobook data from: unknown</div>
-      <div id="appBuild">Checking app version...</div>
+    <div id="menuPanel" class="hidden">
+      <div id="menuList">
+        <button id="menuSyncBtn" class="menuItem" type="button">
+          <span class="menuItemLabel">Sync Now</span>
+          <span class="menuItemSub" id="menuSyncStatus">Ready</span>
+        </button>
+        <button id="menuWishlistBtn" class="menuItem" type="button">
+          <span class="menuItemLabel" id="menuWishlistLabel">Wishlist</span>
+          <span class="menuItemSub" id="menuWishlistCount"></span>
+        </button>
+        <button id="menuAboutBtn" class="menuItem" type="button">
+          <span class="menuItemLabel">About</span>
+        </button>
+      </div>
+      <div id="aboutPanel" class="hidden">
+        <button id="aboutBackBtn" type="button">&larr; Back</button>
+        <div class="aboutRow">
+          <span class="aboutLabel">Status</span>
+          <span class="aboutValue" id="status">Loading...</span>
+        </div>
+        <div class="aboutRow">
+          <span class="aboutLabel">App synced</span>
+          <span class="aboutValue" id="lastSync">Never</span>
+        </div>
+        <div class="aboutRow">
+          <span class="aboutLabel">Movies/TV data</span>
+          <span class="aboutValue" id="libraryUpdated">Unknown</span>
+        </div>
+        <div class="aboutRow">
+          <span class="aboutLabel">Audiobook data</span>
+          <span class="aboutValue" id="audiobookUpdated">Unknown</span>
+        </div>
+        <div id="appBuild">Checking app version...</div>
+      </div>
     </div>
   </div>
 
@@ -354,10 +478,6 @@
     <button class="filterChip active" type="button" data-filter="all">All</button>
     <button class="filterChip" type="button" data-filter="video">Movies &amp; TV</button>
     <button class="filterChip" type="button" data-filter="audiobook">Audiobooks</button>
-  </div>
-  <div id="modeRow">
-    <div id="count"></div>
-    <button id="modeToggle" type="button">View Wishlist</button>
   </div>
   <div id="results"></div>
   <div id="empty" style="display:none;"></div>

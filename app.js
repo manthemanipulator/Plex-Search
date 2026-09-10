@@ -132,6 +132,25 @@ function isTimestampStale(value) {
   return Date.now() - parsed.getTime() > STALE_THRESHOLD_MS;
 }
 
+// The Sheet hands back timestamps as a full JS Date().toString(), e.g.
+// "Wed Sep 09 2026 16:43:21 GMT-0700 (Pacific Daylight Time)" - technically
+// readable, but it's a lot of text for "when did this last update." This
+// shortens anything parseable down to "Sep 9, 4:43 PM" for display. Falls
+// back to the original string untouched if it isn't a recognizable date,
+// same defensive stance as isTimestampStale above - never hide data just
+// because it didn't parse.
+function formatTimestamp(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
 // ---------------------------------------------------------------------
 // Search matching - identical logic to the original Apps Script version,
 // runs entirely client-side so it works with zero connectivity.
@@ -325,7 +344,10 @@ async function syncNow() {
     // Mac Mini push) actually wrote new data.
     if (fresh.syncTime) state.librarySyncTime = fresh.syncTime;
     if (fresh.audiobookSyncTime) state.audiobookSyncTime = fresh.audiobookSyncTime;
-    state.lastSync = new Date().toLocaleString();
+    // Stored raw (not pre-formatted) so formatTimestamp() can shorten it
+    // for display the same way it shortens the two Sheet-provided
+    // timestamps above - one formatting path instead of two.
+    state.lastSync = new Date().toISOString();
     lastSyncOk = true;
     saveLocalData();
     render();
@@ -347,25 +369,30 @@ function setStatus(text) {
   const el = document.getElementById("status");
   if (el) el.textContent = text;
 
+  // Mirrors the same text as a subtitle under the "Sync Now" menu row, so
+  // you can see it's working (or why it isn't) without having to drill
+  // into About.
+  const menuSyncStatusEl = document.getElementById("menuSyncStatus");
+  if (menuSyncStatusEl) menuSyncStatusEl.textContent = text;
+
+  // Each row's label (in the markup) already says what the value is, so
+  // these just hold the (shortened) timestamp itself now - no more
+  // "Movies/TV data from: <full sentence>" repeated for every row.
   const lastSyncEl = document.getElementById("lastSync");
   if (lastSyncEl) {
-    lastSyncEl.textContent = state.lastSync ? "App synced: " + state.lastSync : "App never synced yet";
+    lastSyncEl.textContent = state.lastSync ? formatTimestamp(state.lastSync) : "Never";
   }
 
   const libraryEl = document.getElementById("libraryUpdated");
   if (libraryEl) {
-    libraryEl.textContent = state.librarySyncTime
-      ? "Movies/TV data from: " + state.librarySyncTime
-      : "Movies/TV data from: unknown";
-    libraryEl.className = isTimestampStale(state.librarySyncTime) ? "stale" : "";
+    libraryEl.textContent = state.librarySyncTime ? formatTimestamp(state.librarySyncTime) : "Unknown";
+    libraryEl.classList.toggle("stale", isTimestampStale(state.librarySyncTime));
   }
 
   const audiobookEl = document.getElementById("audiobookUpdated");
   if (audiobookEl) {
-    audiobookEl.textContent = state.audiobookSyncTime
-      ? "Audiobook data from: " + state.audiobookSyncTime
-      : "Audiobook data from: unknown";
-    audiobookEl.className = isTimestampStale(state.audiobookSyncTime) ? "stale" : "";
+    audiobookEl.textContent = state.audiobookSyncTime ? formatTimestamp(state.audiobookSyncTime) : "Unknown";
+    audiobookEl.classList.toggle("stale", isTimestampStale(state.audiobookSyncTime));
   }
 
   updateStatusDots();
@@ -397,13 +424,41 @@ function updateStatusDots() {
   }
 }
 
-function toggleDetailsPanel() {
-  const panel = document.getElementById("detailsPanel");
+// The hamburger opens #menuPanel showing three rows (Sync Now / Wishlist /
+// About). About swaps in a second "screen" (#aboutPanel) inside the same
+// popover rather than opening anything separate - showMenuListView/
+// showAboutView flip between the two, and the panel always resets to the
+// list view each time it's freshly opened.
+function showMenuListView() {
+  const list = document.getElementById("menuList");
+  const about = document.getElementById("aboutPanel");
+  if (list) list.classList.remove("hidden");
+  if (about) about.classList.add("hidden");
+}
+
+function showAboutView() {
+  const list = document.getElementById("menuList");
+  const about = document.getElementById("aboutPanel");
+  if (list) list.classList.add("hidden");
+  if (about) about.classList.remove("hidden");
+  refreshAppBuildLine(); // fresh read each time About is actually opened
+}
+
+function closeMenuPanel() {
+  const panel = document.getElementById("menuPanel");
+  const btn = document.getElementById("menuBtn");
+  if (!panel || !btn) return;
+  panel.classList.add("hidden");
+  btn.setAttribute("aria-expanded", "false");
+}
+
+function toggleMenuPanel() {
+  const panel = document.getElementById("menuPanel");
   const btn = document.getElementById("menuBtn");
   if (!panel || !btn) return;
   const nowHidden = panel.classList.toggle("hidden");
   btn.setAttribute("aria-expanded", String(!nowHidden));
-  if (!nowHidden) refreshAppBuildLine(); // just opened - get a fresh read each time
+  if (!nowHidden) showMenuListView(); // just opened - always start at the top-level list
 }
 
 // Asks whichever service worker is ACTUALLY controlling this page right
@@ -482,17 +537,22 @@ function formatDuration(seconds) {
   return m + "m";
 }
 
-function renderCounts() {
-  const countEl = document.getElementById("count");
-  if (countEl) {
-    const movieCount = state.inventory.filter((item) => item.type !== "TV Show").length;
-    const tvCount = state.inventory.length - movieCount;
-    const bookCount = state.audiobooks.length;
-    countEl.textContent = movieCount + " movies, " + tvCount + " TV Shows, " + bookCount + " audiobooks";
-  }
-  const toggleBtn = document.getElementById("modeToggle");
-  if (toggleBtn) {
-    toggleBtn.textContent = mode === "wishlist" ? "Back to Search" : "View Wishlist (" + state.wishlist.length + ")";
+// The old always-visible "830 movies, 33 TV Shows, 76 audiobooks" text
+// line is gone - it was redundant with the big stat tiles shown on the
+// idle search screen (see renderIdleTiles). All that's left to keep live
+// here is the Wishlist row inside the menu, which doubles as the mode
+// toggle (its label flips to "Back to Search" once you're in wishlist
+// mode, same behavior the old modeToggle button had).
+function updateMenuWishlistItem() {
+  const label = document.getElementById("menuWishlistLabel");
+  const sub = document.getElementById("menuWishlistCount");
+  if (!label || !sub) return;
+  if (mode === "wishlist") {
+    label.textContent = "Back to Search";
+    sub.textContent = "";
+  } else {
+    label.textContent = "Wishlist";
+    sub.textContent = state.wishlist.length + (state.wishlist.length === 1 ? " item" : " items");
   }
 }
 
@@ -564,7 +624,7 @@ function makeResultRow(opts) {
 }
 
 function render() {
-  renderCounts();
+  updateMenuWishlistItem();
   const query = document.getElementById("q").value.trim();
   const resultsEl = document.getElementById("results");
   const emptyEl = document.getElementById("empty");
@@ -614,6 +674,59 @@ function renderWishlistMode(query, resultsEl, emptyEl) {
   });
 }
 
+// Fills the space below the search box before you've typed anything -
+// previously just blank. Four big, tappable tiles: Movies/TV/Audiobooks
+// jump the filter chip and refocus the search box (a nudge toward typing,
+// since this app is search-only and doesn't browse full lists), Wishlist
+// jumps straight into wishlist mode, same as the header button.
+function renderIdleTiles(resultsEl) {
+  const movieCount = state.inventory.filter((item) => item.type !== "TV Show").length;
+  const tvCount = state.inventory.length - movieCount;
+  const bookCount = state.audiobooks.length;
+  const wishCount = state.wishlist.length;
+
+  const tiles = [
+    { num: movieCount, label: "Movies", filter: "video" },
+    { num: tvCount, label: "TV Shows", filter: "video" },
+    { num: bookCount, label: "Audiobooks", filter: "audiobook" },
+    { num: wishCount, label: "Wishlist", action: "wishlist" }
+  ];
+
+  const grid = document.createElement("div");
+  grid.className = "statGrid";
+  tiles.forEach((t) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "statCard";
+
+    const num = document.createElement("span");
+    num.className = "statNum";
+    num.textContent = t.num;
+    card.appendChild(num);
+
+    const label = document.createElement("span");
+    label.className = "statLabel";
+    label.textContent = t.label;
+    card.appendChild(label);
+
+    card.addEventListener("click", () => {
+      if (t.action === "wishlist") {
+        toggleMode();
+      } else {
+        setTypeFilter(t.filter);
+        document.getElementById("q").focus();
+      }
+    });
+    grid.appendChild(card);
+  });
+  resultsEl.appendChild(grid);
+
+  const hint = document.createElement("div");
+  hint.className = "idleHint";
+  hint.textContent = "Start typing above to search your library.";
+  resultsEl.appendChild(hint);
+}
+
 // Type-to-search against your library (movies/TV + audiobooks, per the
 // active filter chip) and the wishlist - a checkmark-style tag if you
 // already have it, or a button to add it to the wishlist if nothing
@@ -621,6 +734,7 @@ function renderWishlistMode(query, resultsEl, emptyEl) {
 function renderSearchMode(query, resultsEl, emptyEl) {
   if (!query) {
     emptyEl.style.display = "none";
+    renderIdleTiles(resultsEl);
     return;
   }
 
@@ -726,23 +840,33 @@ function init() {
   setStatus(navigator.onLine ? "Ready" : "Offline");
 
   document.getElementById("q").addEventListener("input", render);
-  document.getElementById("syncBtn").addEventListener("click", syncNow);
-  document.getElementById("modeToggle").addEventListener("click", toggleMode);
   document.querySelectorAll(".filterChip").forEach((btn) => {
     btn.addEventListener("click", () => setTypeFilter(btn.dataset.filter));
   });
 
+  // Sync stays open afterward so you can watch "Syncing..." resolve into
+  // "Synced" (or an error) right there in the menu; Wishlist swaps the
+  // whole main screen so the menu closes to get out of the way; About
+  // swaps to the second "screen" inside the same popover instead of
+  // closing.
+  document.getElementById("menuSyncBtn").addEventListener("click", syncNow);
+  document.getElementById("menuWishlistBtn").addEventListener("click", () => {
+    toggleMode();
+    closeMenuPanel();
+  });
+  document.getElementById("menuAboutBtn").addEventListener("click", showAboutView);
+  document.getElementById("aboutBackBtn").addEventListener("click", showMenuListView);
+
   const menuBtn = document.getElementById("menuBtn");
   menuBtn.addEventListener("click", (e) => {
     e.stopPropagation(); // don't let this same click immediately re-trigger the outside-click-closes handler below
-    toggleDetailsPanel();
+    toggleMenuPanel();
   });
   document.addEventListener("click", (e) => {
-    const panel = document.getElementById("detailsPanel");
+    const panel = document.getElementById("menuPanel");
     if (!panel || panel.classList.contains("hidden")) return;
     if (panel.contains(e.target)) return; // clicks inside the panel shouldn't close it
-    panel.classList.add("hidden");
-    menuBtn.setAttribute("aria-expanded", "false");
+    closeMenuPanel();
   });
 
   window.addEventListener("online", () => {
