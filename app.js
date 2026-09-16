@@ -556,6 +556,16 @@ function updateMenuWishlistItem() {
   }
 }
 
+// Clicking the "Media Search" title is a shortcut back to the main search
+// screen - closes the menu/about popover if it's open, and drops out of
+// Wishlist mode if that's where you were. Reuses toggleMode() rather than
+// duplicating its mode-switch logic, since with only two modes "make sure
+// we're on search" and "toggle off wishlist" are the same operation.
+function goToSearch() {
+  closeMenuPanel();
+  if (mode !== "search") toggleMode();
+}
+
 function toggleMode() {
   mode = mode === "search" ? "wishlist" : "search";
   const input = document.getElementById("q");
@@ -838,6 +848,14 @@ function init() {
   loadLocalData();
   render();
   setStatus(navigator.onLine ? "Ready" : "Offline");
+
+  document.getElementById("appTitle").addEventListener("click", goToSearch);
+  document.getElementById("appTitle").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault(); // stop Space from also scrolling the page
+      goToSearch();
+    }
+  });
 
   document.getElementById("q").addEventListener("input", render);
   document.querySelectorAll(".filterChip").forEach((btn) => {

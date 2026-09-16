@@ -113,6 +113,7 @@
     color: var(--fg);
   }
   h1 { font-size: 24px; font-weight: 700; margin: 0; line-height: 1.2; }
+  #appTitle { cursor: pointer; }
 
   /* #headerWrap anchors the dropdown details panel so it can be
      absolutely positioned under the hamburger button without pushing
@@ -429,7 +430,7 @@
 <body>
   <div id="headerWrap">
     <div id="topBar">
-      <h1>Media Search</h1>
+      <h1 id="appTitle" role="button" tabindex="0" title="Back to search">Media Search</h1>
       <div id="topControls">
         <span class="statusItem" title="App sync status">App <span class="statusDot neutral" id="appSyncDot"></span></span>
         <span class="statusItem" title="Library data status">Library <span class="statusDot neutral" id="librarySyncDot"></span></span>
