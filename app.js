@@ -566,6 +566,24 @@ function goToSearch() {
   if (mode !== "search") toggleMode();
 }
 
+// Shows/hides the little "x" inside the search box - only worth having
+// once there's actually something typed to clear.
+function updateClearButton() {
+  const input = document.getElementById("q");
+  const btn = document.getElementById("clearSearchBtn");
+  if (!input || !btn) return;
+  btn.classList.toggle("visible", input.value.length > 0);
+}
+
+function clearSearch() {
+  const input = document.getElementById("q");
+  if (!input) return;
+  input.value = "";
+  updateClearButton();
+  render();
+  input.focus();
+}
+
 function toggleMode() {
   mode = mode === "search" ? "wishlist" : "search";
   const input = document.getElementById("q");
@@ -857,7 +875,12 @@ function init() {
     }
   });
 
-  document.getElementById("q").addEventListener("input", render);
+  document.getElementById("q").addEventListener("input", () => {
+    updateClearButton();
+    render();
+  });
+  document.getElementById("clearSearchBtn").addEventListener("click", clearSearch);
+  updateClearButton(); // in case the browser restored a typed value on reload
   document.querySelectorAll(".filterChip").forEach((btn) => {
     btn.addEventListener("click", () => setTypeFilter(btn.dataset.filter));
   });

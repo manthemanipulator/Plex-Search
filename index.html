@@ -262,9 +262,11 @@
     color: var(--faint);
   }
 
+  #searchBox { position: relative; }
+
   input#q {
     width: 100%;
-    padding: 14px 16px;
+    padding: 14px 40px 14px 16px;
     font-size: 17px;
     border-radius: 10px;
     border: 1px solid var(--border);
@@ -272,6 +274,26 @@
     color: var(--fg);
     min-height: 48px;
   }
+
+  /* Only shown once there's something typed to clear - see updateClearButton() */
+  #clearSearchBtn {
+    display: none;
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+  #clearSearchBtn.visible { display: block; }
+  #clearSearchBtn:hover { background: var(--border); }
 
   /* Filter chips: which library(s) results come from. Only meaningful in
      search mode - hidden while browsing the wishlist, since that's
@@ -474,7 +496,10 @@
     </div>
   </div>
 
-  <input id="q" type="text" placeholder="Search movies, TV & audiobooks..." autofocus autocomplete="off">
+  <div id="searchBox">
+    <input id="q" type="text" placeholder="Search movies, TV & audiobooks..." autofocus autocomplete="off">
+    <button id="clearSearchBtn" type="button" aria-label="Clear search">&times;</button>
+  </div>
   <div id="filterRow">
     <button class="filterChip active" type="button" data-filter="all">All</button>
     <button class="filterChip" type="button" data-filter="video">Movies &amp; TV</button>
