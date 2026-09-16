@@ -466,54 +466,67 @@ function doPost(e) {
     return jsonResponse_({ ok: false, error: "Invalid JSON body" });
   }
 
-  var expectedSecret = PropertiesService.getScriptProperties().getProperty('API_SECRET');
-  if (!expectedSecret) {
-    return jsonResponse_({ ok: false, error: "No API secret configured. Run 'Set API Secret' from the Media Tools menu first." });
-  }
-  if (body.secret !== expectedSecret) {
-    return jsonResponse_({ ok: false, error: "Unauthorized" });
-  }
-
-  if (body.action === 'getData') {
-    var data = getOfflineData();
-    data.ok = true;
-    return jsonResponse_(data);
-  }
-
-  if (body.action === 'syncAudiobooks') {
-    if (!Array.isArray(body.audiobooks)) {
-      return jsonResponse_({ ok: false, error: "Missing or invalid 'audiobooks' array" });
+  // Everything below here can throw - a SpreadsheetApp call timing out
+  // under load, a LockService wait timing out if two devices sync at the
+  // same moment, etc. Uncaught, Apps Script returns an HTML error page
+  // instead of JSON, which the PWA can't parse - that shows up client-side
+  // as an opaque "Sync failed" with no usable detail (see app.js's
+  // postToApi/syncNow). Wrapping the whole dispatch means any such
+  // failure still comes back as real JSON with the actual error message,
+  // so it's visible in the PWA's About > Recent sync attempts log instead
+  // of only ever being a mystery.
+  try {
+    var expectedSecret = PropertiesService.getScriptProperties().getProperty('API_SECRET');
+    if (!expectedSecret) {
+      return jsonResponse_({ ok: false, error: "No API secret configured. Run 'Set API Secret' from the Media Tools menu first." });
     }
-    return jsonResponse_(syncAudiobooksFromPush_(body.audiobooks));
-  }
-
-  if (body.action === 'syncOrganizeLog') {
-    if (!Array.isArray(body.rows)) {
-      return jsonResponse_({ ok: false, error: "Missing or invalid 'rows' array" });
+    if (body.secret !== expectedSecret) {
+      return jsonResponse_({ ok: false, error: "Unauthorized" });
     }
-    return jsonResponse_(syncOrganizeLogFromPush_(body.rows));
-  }
 
-  if (body.action === 'syncInventory') {
-    if (!Array.isArray(body.titles)) {
-      return jsonResponse_({ ok: false, error: "Missing or invalid 'titles' array" });
+    if (body.action === 'getData') {
+      var data = getOfflineData();
+      data.ok = true;
+      return jsonResponse_(data);
     }
-    return jsonResponse_(syncInventoryFromPush_(body.titles));
-  }
 
-  if (!body.title) {
-    return jsonResponse_({ ok: false, error: "Missing title" });
-  }
+    if (body.action === 'syncAudiobooks') {
+      if (!Array.isArray(body.audiobooks)) {
+        return jsonResponse_({ ok: false, error: "Missing or invalid 'audiobooks' array" });
+      }
+      return jsonResponse_(syncAudiobooksFromPush_(body.audiobooks));
+    }
 
-  if (body.action === 'add') {
-    addToWishlist(body.title, body.type);
-    return jsonResponse_({ ok: true });
-  } else if (body.action === 'remove') {
-    var result = removeFromWishlist(body.title);
-    return jsonResponse_({ ok: true, result: result });
-  }
+    if (body.action === 'syncOrganizeLog') {
+      if (!Array.isArray(body.rows)) {
+        return jsonResponse_({ ok: false, error: "Missing or invalid 'rows' array" });
+      }
+      return jsonResponse_(syncOrganizeLogFromPush_(body.rows));
+    }
 
-  return jsonResponse_({ ok: false, error: "Unknown action: " + body.action });
+    if (body.action === 'syncInventory') {
+      if (!Array.isArray(body.titles)) {
+        return jsonResponse_({ ok: false, error: "Missing or invalid 'titles' array" });
+      }
+      return jsonResponse_(syncInventoryFromPush_(body.titles));
+    }
+
+    if (!body.title) {
+      return jsonResponse_({ ok: false, error: "Missing title" });
+    }
+
+    if (body.action === 'add') {
+      addToWishlist(body.title, body.type);
+      return jsonResponse_({ ok: true });
+    } else if (body.action === 'remove') {
+      var result = removeFromWishlist(body.title);
+      return jsonResponse_({ ok: true, result: result });
+    }
+
+    return jsonResponse_({ ok: false, error: "Unknown action: " + body.action });
+  } catch (err) {
+    return jsonResponse_({ ok: false, error: "Server error: " + err.message });
+  }
 }
 
 function jsonResponse_(obj) {

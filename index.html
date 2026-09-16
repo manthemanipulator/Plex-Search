@@ -254,6 +254,51 @@
     color: var(--fg);
   }
   .aboutValue.stale { color: var(--stale-fg); }
+
+  /* Recent sync attempts - a small persisted log (app.js: logSyncEvent/
+     renderSyncLog) so an intermittent failure is still inspectable after
+     the fact instead of only ever existing in a console no one had open
+     at the time. Most recent first, capped at SYNC_LOG_MAX entries. */
+  .syncLogList {
+    max-height: 150px;
+    overflow-y: auto;
+    margin-top: 4px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .syncLogEmpty {
+    padding: 8px;
+    font-size: 12px;
+    color: var(--faint);
+  }
+  .syncLogEntry {
+    display: flex;
+    gap: 8px;
+    padding: 6px 8px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .syncLogEntry:last-child { border-bottom: none; }
+  .syncLogTime {
+    flex: 0 0 auto;
+    color: var(--faint);
+    white-space: nowrap;
+  }
+  .syncLogDetail { color: var(--fg); word-break: break-word; }
+  .syncLogEntry.fail .syncLogDetail { color: var(--dot-bad); }
+  .syncLogEntry.ok .syncLogDetail { color: var(--dot-ok); }
+  #copySyncLogBtn.aboutSmallBtn {
+    margin-top: 6px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 5px 10px;
+  }
+  #copySyncLogBtn.aboutSmallBtn:active { background: var(--btn-active); }
+
   #appBuild {
     margin-top: 8px;
     padding-top: 10px;
@@ -490,6 +535,11 @@
         <div class="aboutRow">
           <span class="aboutLabel">Audiobook data</span>
           <span class="aboutValue" id="audiobookUpdated">Unknown</span>
+        </div>
+        <div class="aboutRow">
+          <span class="aboutLabel">Recent sync attempts</span>
+          <div id="syncLogList" class="syncLogList"></div>
+          <button id="copySyncLogBtn" type="button" class="aboutSmallBtn">Copy log</button>
         </div>
         <div id="appBuild">Checking app version...</div>
       </div>

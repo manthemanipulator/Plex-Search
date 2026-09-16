@@ -31,8 +31,37 @@ const STORAGE_KEYS = {
   lastSync: "plex.lastSync",
   librarySyncTime: "plex.librarySyncTime",
   audiobookSyncTime: "plex.audiobookSyncTime",
-  apiSecret: "plex.apiSecret"
+  apiSecret: "plex.apiSecret",
+  syncLog: "plex.syncLog"
 };
+
+// A small rolling log of sync attempts (success and failure), persisted to
+// localStorage so an intermittent failure survives long enough to actually
+// look at - "Sync failed" alone (console.error only) was useless for
+// tracking down anything that isn't reproducible on demand. Capped so it
+// can't grow unbounded; oldest entries drop off first.
+const SYNC_LOG_MAX = 25;
+
+function loadSyncLog() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.syncLog) || "[]");
+  } catch (err) {
+    return [];
+  }
+}
+
+function logSyncEvent(ok, detail) {
+  try {
+    const log = loadSyncLog();
+    log.push({ time: new Date().toISOString(), ok: !!ok, detail: String(detail).slice(0, 300) });
+    while (log.length > SYNC_LOG_MAX) log.shift();
+    localStorage.setItem(STORAGE_KEYS.syncLog, JSON.stringify(log));
+  } catch (err) {
+    // The log is a nice-to-have for debugging - never let a storage
+    // hiccup (full quota, private browsing, etc.) break an actual sync.
+    console.error("Failed to persist sync log entry:", err);
+  }
+}
 
 // How stale either side's sync data can get before the UI flags it as
 // suspicious rather than just informational.
@@ -239,16 +268,36 @@ function forgetStoredSecret() {
 // ---------------------------------------------------------------------
 
 async function postToApi(payload) {
-  const res = await fetch(CONFIG.API_URL, {
-    method: "POST",
-    // text/plain avoids a CORS preflight request, which Apps Script Web
-    // Apps don't handle by default. The server still JSON.parse()s the
-    // body regardless of the declared content type.
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return res.json();
+  let res;
+  try {
+    res = await fetch(CONFIG.API_URL, {
+      method: "POST",
+      // text/plain avoids a CORS preflight request, which Apps Script Web
+      // Apps don't handle by default. The server still JSON.parse()s the
+      // body regardless of the declared content type.
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
+    });
+  } catch (networkErr) {
+    // fetch() itself threw - offline mid-request, DNS hiccup, the OS
+    // suspending the tab/app before the request finished, etc.
+    throw new Error("Network error: " + networkErr.message);
+  }
+
+  // Read as text first (not res.json() directly) so a non-JSON response -
+  // most commonly Apps Script's own HTML error page when the script
+  // throws server-side - gives a useful message instead of a bare
+  // "Unexpected token '<'" parse error with no other detail.
+  const text = await res.text();
+
+  if (!res.ok) {
+    throw new Error("HTTP " + res.status + ": " + text.slice(0, 200));
+  }
+  try {
+    return JSON.parse(text);
+  } catch (parseErr) {
+    throw new Error("Server didn't return valid JSON (likely an Apps Script error): " + text.slice(0, 200));
+  }
 }
 
 // Fetching your library/wishlist goes through the same authenticated
@@ -303,6 +352,7 @@ async function syncNow() {
       });
       if (!result.ok) {
         console.error("Sync item rejected by server:", item, result.error);
+        logSyncEvent(false, "Rejected \"" + item.title + "\": " + (result.error || "unknown"));
         lastSyncOk = false;
         if (result.error === "Unauthorized") {
           // Wrong/stale secret - forget it so the next attempt re-prompts
@@ -322,6 +372,7 @@ async function syncNow() {
     // Pull the freshest inventory/audiobooks/wishlist now that our writes landed.
     const fresh = await fetchLatestData(secret);
     if (!fresh.ok && fresh.error) {
+      logSyncEvent(false, "Fetch failed: " + fresh.error);
       lastSyncOk = false;
       if (fresh.error === "Unauthorized") {
         forgetStoredSecret();
@@ -349,11 +400,13 @@ async function syncNow() {
     // timestamps above - one formatting path instead of two.
     state.lastSync = new Date().toISOString();
     lastSyncOk = true;
+    logSyncEvent(true, "Synced OK");
     saveLocalData();
     render();
     setStatus("Synced");
   } catch (err) {
     console.error("Sync failed:", err);
+    logSyncEvent(false, (err && err.message) ? err.message : String(err));
     lastSyncOk = false;
     setStatus("Sync failed - will retry (" + state.pendingQueue.length + " queued)");
   } finally {
@@ -442,6 +495,60 @@ function showAboutView() {
   if (list) list.classList.add("hidden");
   if (about) about.classList.remove("hidden");
   refreshAppBuildLine(); // fresh read each time About is actually opened
+  renderSyncLog();
+}
+
+// Most-recent-first list of the last SYNC_LOG_MAX sync attempts, so an
+// intermittent "Sync failed" from earlier today is still inspectable
+// later instead of only living in a console you weren't watching at the
+// time. Re-rendered fresh each time About is opened (see showAboutView).
+function renderSyncLog() {
+  const el = document.getElementById("syncLogList");
+  if (!el) return;
+  el.innerHTML = ""; // built with real DOM nodes below (textContent, not
+  // innerHTML strings), same as the search results list, so a server
+  // error message that happens to contain "<" or "&" can't break the
+  // markup - these are third-party strings we don't control.
+  const log = loadSyncLog();
+  if (log.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "syncLogEmpty";
+    empty.textContent = "No sync attempts recorded yet.";
+    el.appendChild(empty);
+    return;
+  }
+  log.slice().reverse().forEach((entry) => {
+    const row = document.createElement("div");
+    row.className = "syncLogEntry " + (entry.ok ? "ok" : "fail");
+
+    const time = document.createElement("span");
+    time.className = "syncLogTime";
+    time.textContent = formatTimestamp(entry.time) || entry.time;
+
+    const detail = document.createElement("span");
+    detail.className = "syncLogDetail";
+    detail.textContent = entry.detail;
+
+    row.appendChild(time);
+    row.appendChild(detail);
+    el.appendChild(row);
+  });
+}
+
+function copySyncLogToClipboard() {
+  const log = loadSyncLog();
+  const text = log.length === 0
+    ? "No sync attempts recorded yet."
+    : log.map((e) => (formatTimestamp(e.time) || e.time) + " - " + (e.ok ? "OK" : "FAIL") + " - " + e.detail).join("\n");
+
+  const btn = document.getElementById("copySyncLogBtn");
+  const done = (ok) => { if (btn) btn.textContent = ok ? "Copied!" : "Copy failed"; setTimeout(() => { if (btn) btn.textContent = "Copy log"; }, 1500); };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false));
+  } else {
+    done(false);
+  }
 }
 
 function closeMenuPanel() {
@@ -897,6 +1004,8 @@ function init() {
   });
   document.getElementById("menuAboutBtn").addEventListener("click", showAboutView);
   document.getElementById("aboutBackBtn").addEventListener("click", showMenuListView);
+  const copyLogBtn = document.getElementById("copySyncLogBtn");
+  if (copyLogBtn) copyLogBtn.addEventListener("click", copySyncLogToClipboard);
 
   const menuBtn = document.getElementById("menuBtn");
   menuBtn.addEventListener("click", (e) => {
